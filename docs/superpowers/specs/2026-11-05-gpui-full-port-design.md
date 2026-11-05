@@ -1,7 +1,7 @@
 # AnyCaptions Full GPUI Port Design
 
 **Date:** 2026-11-05
-**Status:** Approved architecture, pending implementation plan
+**Status:** Approved architecture and implementation plan
 **Baseline:** P0 spike `f248a85`; P1 core extraction `20fd0b0`; frontend 0.2.0
 
 ## 1. Goal and non-goals
