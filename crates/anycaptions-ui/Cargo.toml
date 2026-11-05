@@ -8,8 +8,11 @@ publish = false
 
 [dependencies]
 anycaptions-core = { path = "../anycaptions-core" }
-gpui = "=0.2.2"
+anycaptions-platform-win32 = { path = "../anycaptions-platform-win32" }
+async-channel = "2.5.0"
+gpui = { version = "=0.2.2", default-features = false }
+raw-window-handle = "0.6"
 unicode-segmentation = "1.13.3"
 
 [dev-dependencies]
-gpui = { version = "=0.2.2", features = ["test-support"] }
+gpui = { version = "=0.2.2", default-features = false, features = ["test-support"] }
