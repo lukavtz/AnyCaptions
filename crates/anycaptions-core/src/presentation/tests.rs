@@ -168,7 +168,7 @@ fn caption_font_catalog_is_complete_and_falls_back_to_inter() {
         (
             "fira-code",
             "Fira Code",
-            "\"Fira Code Variable\", Consolas, monospace",
+            "\"Fira Code\", Consolas, monospace",
         ),
         ("segoe-ui", "Segoe UI", "\"Segoe UI\", Arial, sans-serif"),
         ("arial", "Arial", "Arial, Helvetica, sans-serif"),

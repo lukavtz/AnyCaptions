@@ -315,6 +315,11 @@ impl CaptionColor {
             .map(Self)
     }
 
+    /// Creates a color from a native `0xRRGGBB` value.
+    pub const fn from_rgb(rgb: u32) -> Self {
+        Self(rgb)
+    }
+
     /// Returns the color as `0xRRGGBB` for native text and paint adapters.
     pub const fn rgb(self) -> u32 {
         self.0

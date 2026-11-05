@@ -42,7 +42,7 @@ const CAPTION_FONT_OPTIONS: [CaptionFontOption; 9] = [
     CaptionFontOption {
         id: "fira-code",
         name: "Fira Code",
-        family: "\"Fira Code Variable\", Consolas, monospace",
+        family: "\"Fira Code\", Consolas, monospace",
     },
     CaptionFontOption {
         id: "segoe-ui",
