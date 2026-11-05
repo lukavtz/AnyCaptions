@@ -178,7 +178,7 @@ impl<F: CaptionFits> CaptionPresenter<F> {
         let stale_revision = self.active_revision.is_some_and(|revision| {
             update.revision <= revision
                 // Translation finals have their own lower revision sequence.
-                && !(self.active_provisional && !update.provisional)
+                && (!self.active_provisional || update.provisional)
         });
         update.segment_id >= self.active_segment_id
             && (update.segment_id != self.active_segment_id
