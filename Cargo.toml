@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
-exclude = ["backend"]
+exclude = ["backend", "crates/anycaptions"]
 
 [workspace.package]
 edition = "2024"

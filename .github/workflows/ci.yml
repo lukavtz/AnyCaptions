@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - feat/full-gpui-port
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: 0
+      RUST_BACKTRACE: 1
+      RC_EXE: C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\rc.exe
+      GPUI_FXC_PATH: C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\fxc.exe
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Check pinned Windows SDK tools
+        shell: powershell
+        run: |
+          foreach ($tool in @($env:RC_EXE, $env:GPUI_FXC_PATH)) {
+            if (-not (Test-Path -LiteralPath $tool -PathType Leaf)) {
+              throw "Pinned Windows SDK tool is missing: $tool"
+            }
+          }
+          rustup show
+
+      - name: Validate artifact lock schema
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-release.ps1 -LockOnly
+
+      - name: Test packaging fixtures
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-packaging.ps1
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+      - name: Run Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Run tests
+        run: cargo test --workspace --locked
+
+      - name: Build debug workspace
+        run: cargo build --workspace --locked
+
+      - name: Install pinned cargo-audit
+        run: cargo install cargo-audit --version 0.21.1 --locked
+
+      - name: Audit dependencies
+        run: cargo audit
