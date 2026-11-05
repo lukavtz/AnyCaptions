@@ -158,6 +158,7 @@ CI uses a pinned Windows runner/toolchain and runs formatting, Clippy, all tests
 ### Automated
 
 - Preserve all 141 core tests and port the behavioral substance of all 76 frontend tests to Rust/GPUI owners.
+- Preserve the 153-test legacy backend suite and classify all 11 real-model tests; execute every test whose pinned model/audio inputs are available.
 - Add GPUI tests for widgets, focus, picker keyboard behavior, captions, settings, and window events.
 - Add pure tests for geometry, indicator placement, single-instance decisions, hotkey rollback, and update gates.
 - Add UIA and native integration scripts for taskbar/style/accessibility contracts.

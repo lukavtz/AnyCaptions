@@ -315,6 +315,11 @@ impl CaptionColor {
             .map(Self)
     }
 
+    /// Returns the color as `0xRRGGBB` for native text and paint adapters.
+    pub const fn rgb(self) -> u32 {
+        self.0
+    }
+
     fn as_hex(self) -> String {
         format!("#{:06X}", self.0)
     }

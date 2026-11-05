@@ -40,9 +40,10 @@ Port the six `backend/src/window.rs` geometry tests and add an off-screen restor
 
 ```rust
 let restored = ensure_visible(
-    Rect::new(-1900, -1100, 800, 160),
+    Rect::new(-1900, -1300, 800, 160),
     &[WorkArea::new("left", Rect::new(-1920, -1080, 1920, 1080), 1.0)],
 );
+assert_eq!(restored, initial_geometry(areas[0].area));
 assert!(restored.overlaps_at_least(32, 32, Rect::new(-1920, -1080, 1920, 1080)));
 ```
 
@@ -439,7 +440,7 @@ git commit -m "build: add deterministic GPUI packaging and CI"
 
 - [ ] **Step 1: Write failing overlay integration tests**
 
-Port caption visibility, lock, drag-region exclusion, primary-button resize, indicator revision, idle hide, and literal-text cases. Add a native test plan for actual click-through and DPI geometry.
+Port caption visibility, lock, drag-region exclusion, primary-button resize, indicator revision, idle hide, and literal-text cases. Explicitly verify a 60-second session does not self-clear, only the newest translated sentence animates, disposal cancels the fade timer/listeners, and reduced motion selects immediate clearing. Add a native test plan for actual click-through and DPI geometry.
 
 - [ ] **Step 2: Run the red check**
 
@@ -567,8 +568,8 @@ git commit -m "feat: wire GPUI application services and recovery"
 
 - [ ] **Step 1: Run pre-cutover contract checks**
 
-Run: `cargo test --workspace --locked` and `npm.cmd --prefix frontend test -- --run`.
-Expected: current Rust tests and the 76-test legacy baseline pass. Record equivalent Rust coverage for every legacy test file.
+Run: `cargo test --workspace --locked`, `cargo test --manifest-path backend/Cargo.toml`, and `npm.cmd --prefix frontend test -- --run`.
+Expected: current Rust tests, 153 legacy backend tests, and the 76-test frontend baseline pass. Classify all 11 real-model tests and run every test with available pinned inputs. Record equivalent Rust coverage for every legacy test file.
 
 - [ ] **Step 2: Remove the old framework**
 

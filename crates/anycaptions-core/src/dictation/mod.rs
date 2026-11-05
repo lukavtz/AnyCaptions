@@ -3,6 +3,7 @@
 //! O áudio do microfone nunca sai da memória; estas estruturas só guardam
 //! preferências e controlam o ciclo ocioso → gravando → finalizando.
 
+pub mod indicator;
 pub mod inject;
 pub mod machine;
 pub mod runtime;
