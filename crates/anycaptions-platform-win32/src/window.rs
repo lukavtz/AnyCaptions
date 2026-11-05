@@ -5,7 +5,7 @@ use raw_window_handle::RawWindowHandle;
 use windows::{
     Win32::{
         Foundation::{
-            E_HANDLE, GetLastError, HWND, LPARAM, RECT, SetLastError, WIN32_ERROR, WPARAM,
+            E_HANDLE, GetLastError, HWND, LPARAM, POINT, RECT, SetLastError, WIN32_ERROR, WPARAM,
         },
         Graphics::Gdi::{
             EnumDisplayMonitors, GetMonitorInfoW, HMONITOR, MONITOR_DEFAULTTONEAREST,
@@ -15,11 +15,10 @@ use windows::{
             HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI},
             Input::KeyboardAndMouse::ReleaseCapture,
             WindowsAndMessaging::{
-                GWL_EXSTYLE, GetWindowLongPtrW, GetWindowRect, HTCAPTION, HWND_TOPMOST,
-                IsWindowVisible, MONITORINFOF_PRIMARY, SC_SIZE, SW_HIDE, SW_SHOWNOACTIVATE,
-                SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SendMessageW,
-                SetWindowLongPtrW, SetWindowPos, ShowWindowAsync, WM_NCLBUTTONDOWN, WM_SYSCOMMAND,
-                WMSZ_BOTTOM, WMSZ_LEFT, WMSZ_RIGHT,
+                GWL_EXSTYLE, GetCursorPos, GetWindowLongPtrW, GetWindowRect, HTBOTTOM, HTCAPTION,
+                HTLEFT, HTRIGHT, HWND_TOPMOST, IsWindowVisible, MONITORINFOF_PRIMARY, SW_HIDE,
+                SW_SHOWNOACTIVATE, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+                SendMessageW, SetWindowLongPtrW, SetWindowPos, ShowWindowAsync, WM_NCLBUTTONDOWN,
             },
         },
     },
@@ -77,13 +76,20 @@ pub enum ResizeEdge {
 }
 
 impl ResizeEdge {
-    fn sys_command(self) -> u32 {
+    fn hit_test(self) -> u32 {
         match self {
-            Self::West => WMSZ_LEFT,
-            Self::East => WMSZ_RIGHT,
-            Self::South => WMSZ_BOTTOM,
+            Self::West => HTLEFT,
+            Self::East => HTRIGHT,
+            Self::South => HTBOTTOM,
         }
     }
+}
+
+/// Builds the modal non-client sizing message with signed screen coordinates packed as Win32 expects.
+pub(crate) fn resize_message(edge: ResizeEdge, x: i32, y: i32) -> (usize, isize) {
+    let command = edge.hit_test() as usize;
+    let coordinates = (x as u16 as u32) | ((y as u16 as u32) << 16);
+    (command, coordinates as i32 as isize)
 }
 
 /// Resizes around the opposite fixed edge, preserving the upstream minimum size.
@@ -221,7 +227,7 @@ impl WindowEffects {
 
     pub fn begin_move(&self) -> Result<()> {
         unsafe {
-            ReleaseCapture()?;
+            let _ = ReleaseCapture();
             SendMessageW(
                 self.hwnd,
                 WM_NCLBUTTONDOWN,
@@ -233,13 +239,18 @@ impl WindowEffects {
     }
 
     pub fn begin_resize(&self, edge: ResizeEdge) -> Result<()> {
+        let mut cursor = POINT::default();
+        let (command, coordinates) = unsafe {
+            let _ = ReleaseCapture();
+            GetCursorPos(&mut cursor)?;
+            resize_message(edge, cursor.x, cursor.y)
+        };
         unsafe {
-            ReleaseCapture()?;
             SendMessageW(
                 self.hwnd,
-                WM_SYSCOMMAND,
-                Some(WPARAM((SC_SIZE | edge.sys_command()) as usize)),
-                Some(LPARAM(0)),
+                WM_NCLBUTTONDOWN,
+                Some(WPARAM(command)),
+                Some(LPARAM(coordinates)),
             );
         }
         Ok(())
@@ -259,9 +270,7 @@ impl WindowEffects {
 
     fn apply_style(&self, style: u32) -> Result<()> {
         unsafe {
-            // SetWindowPos owns topmost Z-order. Apply every other style first,
-            // then mirror TOPMOST so the style cache cannot clear it afterward.
-            set_window_ex_style(self.hwnd, style & !WS_EX_TOPMOST)?;
+            set_window_ex_style(self.hwnd, style)?;
             SetWindowPos(
                 self.hwnd,
                 Some(HWND_TOPMOST),
@@ -270,8 +279,7 @@ impl WindowEffects {
                 0,
                 0,
                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED,
-            )?;
-            set_window_ex_style(self.hwnd, style)
+            )
         }
     }
 }

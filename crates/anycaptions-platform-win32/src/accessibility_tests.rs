@@ -38,6 +38,7 @@ fn widget_roles_and_patterns_cover_the_settings_surface() {
         assert_eq!(uia_role(kind), role, "wrong role for {kind:?}");
     }
     assert!(uia_patterns(WidgetKind::Toggle).contains(&UiaPattern::Toggle));
+    assert!(uia_patterns(WidgetKind::Button).contains(&UiaPattern::Invoke));
     assert!(uia_patterns(WidgetKind::TextInput).contains(&UiaPattern::Value));
     assert!(uia_patterns(WidgetKind::Picker).contains(&UiaPattern::ExpandCollapse));
     assert!(uia_patterns(WidgetKind::PickerOption).contains(&UiaPattern::SelectionItem));
@@ -308,6 +309,46 @@ fn native_selection_and_toggle_actions_roundtrip() {
     unsafe { pattern.Toggle() }.unwrap();
     assert!(toggle.metadata().unwrap().toggled);
     assert_eq!(unsafe { pattern.ToggleState() }.unwrap(), ToggleState_On);
+}
+
+#[test]
+fn lock_button_exposes_stable_id_and_invokes_its_handler() {
+    let actions = Arc::new(Mutex::new(Vec::new()));
+    let recorded = Arc::clone(&actions);
+    let provider = UiaProviderFactory::create_with_handler(
+        UiaMetadata {
+            automation_id: "lock".into(),
+            name: "Lock window".into(),
+            ..UiaMetadata::new(WidgetKind::Button)
+        },
+        move |action| {
+            recorded.lock().unwrap().push(action);
+            Ok(())
+        },
+    )
+    .unwrap();
+    let raw = provider.raw_provider();
+    unsafe {
+        let role = raw.GetPropertyValue(UIA_ControlTypePropertyId).unwrap();
+        assert_eq!(i32::try_from(&role).unwrap(), UIA_ButtonControlTypeId.0);
+        let id = raw.GetPropertyValue(UIA_AutomationIdPropertyId).unwrap();
+        assert_eq!(id.Anonymous.Anonymous.Anonymous.bstrVal.to_string(), "lock");
+    }
+    let invoke = test_pattern::<IInvokeProvider>(&provider, UIA_InvokePatternId);
+    unsafe { invoke.Invoke() }.unwrap();
+    assert_eq!(actions.lock().unwrap().as_slice(), &[UiaAction::Invoke]);
+}
+
+#[test]
+fn button_without_an_action_handler_has_no_invoke_pattern() {
+    let provider = UiaProviderFactory::create(UiaMetadata::new(WidgetKind::Button)).unwrap();
+    let result = unsafe {
+        provider
+            .raw_provider()
+            .GetPatternProvider(UIA_InvokePatternId)
+    };
+    let error = result.expect_err("a NULL provider is returned through the S_OK path");
+    assert_eq!(error.code(), HRESULT(0));
 }
 
 #[test]

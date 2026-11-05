@@ -126,41 +126,23 @@ mod tests {
     }
 
     #[test]
-    fn mode_parses_separate_value() {
-        assert_eq!(
-            mode_from_args(args(&["--mode", "click-through"])),
-            Mode::ClickThrough
-        );
-        assert_eq!(
-            mode_from_args(args(&["--mode", "interactive"])),
-            Mode::Interactive
-        );
-    }
-
-    #[test]
-    fn mode_parses_equals_form() {
-        assert_eq!(
-            mode_from_args(args(&["--mode=interactive"])),
-            Mode::Interactive
-        );
-        assert_eq!(
-            mode_from_args(args(&["--mode=click-through"])),
-            Mode::ClickThrough
-        );
-    }
-
-    #[test]
-    fn mode_unknown_or_dangling_value_is_click_through() {
-        assert_eq!(
-            mode_from_args(args(&["--mode", "bogus"])),
-            Mode::ClickThrough
-        );
-        assert_eq!(mode_from_args(args(&["--mode"])), Mode::ClickThrough);
-        assert_eq!(mode_from_args(args(&["--mode="])), Mode::ClickThrough);
-        assert_eq!(
-            mode_from_args(args(&["--other", "x", "--mode=INTERACTIVE"])),
-            Mode::ClickThrough
-        );
+    fn mode_parses_separate_and_equals_forms() {
+        let cases = [
+            (args(&["--mode", "click-through"]), Mode::ClickThrough),
+            (args(&["--mode", "interactive"]), Mode::Interactive),
+            (args(&["--mode=interactive"]), Mode::Interactive),
+            (args(&["--mode=click-through"]), Mode::ClickThrough),
+            (args(&["--mode", "bogus"]), Mode::ClickThrough),
+            (args(&["--mode"]), Mode::ClickThrough),
+            (args(&["--mode="]), Mode::ClickThrough),
+            (
+                args(&["--other", "x", "--mode=INTERACTIVE"]),
+                Mode::ClickThrough,
+            ),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(mode_from_args(input), expected);
+        }
     }
 
     #[test]

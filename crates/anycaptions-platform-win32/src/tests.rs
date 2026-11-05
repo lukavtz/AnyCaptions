@@ -6,7 +6,7 @@ use crate::{
     tray::{TrayCommand, menu_spec},
     window::{
         WS_EX_APPWINDOW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
-        WS_EX_TRANSPARENT,
+        WS_EX_TRANSPARENT, resize_message,
     },
 };
 
@@ -64,6 +64,20 @@ fn resize_preserves_opposite_edges_and_minimums() {
 }
 
 #[test]
+fn resize_message_packs_signed_screen_cursor_for_every_edge() {
+    for (edge, expected_command) in [
+        (ResizeEdge::West, 10),
+        (ResizeEdge::East, 11),
+        (ResizeEdge::South, 15),
+    ] {
+        let (command, coordinates) = resize_message(edge, -40, -80);
+        assert_eq!(command, expected_command);
+        assert_eq!(coordinates as u32 & 0xFFFF, (-40_i32 as u16) as u32);
+        assert_eq!((coordinates as u32 >> 16) & 0xFFFF, (-80_i32 as u16) as u32);
+    }
+}
+
+#[test]
 fn tray_menu_preserves_labels_order_and_resource_enablement() {
     let enabled = menu_spec(true);
     assert_eq!(
@@ -110,7 +124,7 @@ mod native {
             UI::WindowsAndMessaging::{
                 CreateWindowExW, DestroyWindow, DispatchMessageW, GWL_EXSTYLE, GetWindowLongPtrW,
                 GetWindowRect, IsWindowVisible, MSG, PM_REMOVE, PeekMessageW, PostMessageW,
-                TranslateMessage, WINDOW_EX_STYLE, WM_HOTKEY, WS_OVERLAPPED,
+                TranslateMessage, WINDOW_EX_STYLE, WM_HOTKEY, WS_OVERLAPPED, WS_VISIBLE,
             },
         },
         core::{PCWSTR, Result, w},
@@ -159,7 +173,7 @@ mod native {
                 WINDOW_EX_STYLE(0x0020_0000),
                 w!("STATIC"),
                 PCWSTR(title.as_ptr()),
-                WS_OVERLAPPED,
+                WS_OVERLAPPED | WS_VISIBLE,
                 0,
                 0,
                 80,

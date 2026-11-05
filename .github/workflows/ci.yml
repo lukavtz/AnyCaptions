@@ -22,7 +22,7 @@ jobs:
       CARGO_TERM_COLOR: always
       CARGO_INCREMENTAL: 0
       RUST_BACKTRACE: 1
-      RC_EXE: C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\rc.exe
+      RC: C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\rc.exe
       GPUI_FXC_PATH: C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\fxc.exe
     steps:
       - name: Checkout
@@ -33,7 +33,7 @@ jobs:
       - name: Check pinned Windows SDK tools
         shell: powershell
         run: |
-          foreach ($tool in @($env:RC_EXE, $env:GPUI_FXC_PATH)) {
+          foreach ($tool in @($env:RC, $env:GPUI_FXC_PATH)) {
             if (-not (Test-Path -LiteralPath $tool -PathType Leaf)) {
               throw "Pinned Windows SDK tool is missing: $tool"
             }

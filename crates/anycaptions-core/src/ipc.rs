@@ -3,10 +3,11 @@ use std::sync::{Arc, Mutex};
 use serde::Serialize;
 
 use crate::{
-    audio::devices::AudioDeviceError,
+    audio::devices::{AudioDeviceError, OutputService},
     dictation::DictationError,
-    domain::{AppSnapshot, AppState, CaptureState, DomainError, Resources},
+    domain::{AppSnapshot, AppState, CaptureState, DomainError, Resources, WindowMode},
     preferences::Preferences,
+    transcription::session::{CaptionSessionManager, SessionPlan, SessionSink},
     update::UpdateError,
 };
 
@@ -89,7 +90,7 @@ pub trait ShortcutRegistry {
 }
 
 fn replace_shortcut(
-    registry: &impl ShortcutRegistry,
+    registry: &(impl ShortcutRegistry + ?Sized),
     previous: &AppSnapshot,
     requested: &str,
 ) -> Result<(), CommandError> {
@@ -223,7 +224,7 @@ impl Controller {
 
     pub fn change_shortcut(
         &self,
-        registry: &impl ShortcutRegistry,
+        registry: &(impl ShortcutRegistry + ?Sized),
         window: &impl StateEvents,
         requested: &str,
     ) -> Result<AppSnapshot, CommandError> {
@@ -240,6 +241,64 @@ impl Controller {
         replace_shortcut(registry, &previous, &normalized)?;
         self.set_shortcut(normalized, true, window)
     }
+
+    pub fn change_window_mode(
+        &self,
+        mode: WindowMode,
+        events: &impl StateEvents,
+    ) -> Result<AppSnapshot, CommandError> {
+        self.update(events, |state| state.set_window_mode(mode))
+    }
+}
+
+/// Starts the domain session before starting native processors so every later
+/// failure has a real session id and transitions the same session to `Error`.
+pub fn start_live_capture(
+    sessions: &CaptionSessionManager,
+    outputs: &OutputService,
+    controller: &Controller,
+    events: &impl StateEvents,
+    sink: Arc<dyn SessionSink>,
+) -> Result<AppSnapshot, CommandError> {
+    // Resource probing is advisory here; start_session remains the authority.
+    // This preserves the legacy behavior when device delivery itself fails.
+    let _ = sessions.refresh_resources(controller, outputs, events);
+    let selection = outputs.selection()?;
+    let snapshot = controller.start_session(events)?;
+    let Some(device_id) = selection
+        .selected_id
+        .filter(|_| selection.selected_available)
+    else {
+        let _ =
+            controller.fail_session(snapshot.session_id, DomainError::CaptureUnavailable, events);
+        return Err(CommandError::Domain(DomainError::CaptureUnavailable));
+    };
+    if let Err(error) = sessions.start_session(
+        SessionPlan {
+            session_id: snapshot.session_id,
+            mode: snapshot.mode,
+            engine: snapshot.translation_engine,
+            source_language: snapshot.source_language,
+            speaker_labels: snapshot.speaker_labels,
+        },
+        device_id,
+        controller.clone(),
+        sink,
+    ) {
+        let _ =
+            controller.fail_session(snapshot.session_id, DomainError::CaptureUnavailable, events);
+        return Err(error);
+    }
+    Ok(snapshot)
+}
+
+pub fn stop_live_capture(
+    sessions: &CaptionSessionManager,
+    controller: &Controller,
+    events: &impl StateEvents,
+) -> Result<AppSnapshot, CommandError> {
+    sessions.stop_session();
+    controller.stop_session(events)
 }
 
 #[cfg(test)]

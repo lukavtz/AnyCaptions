@@ -1,7 +1,7 @@
 //! Windows UI Automation metadata, patterns, and notification factories.
 
 use std::rc::Rc;
-use std::sync::{Arc, RwLock};
+use std::sync::RwLock;
 use std::thread::ThreadId;
 use windows::Win32::Foundation::{E_FAIL, E_INVALIDARG, HWND, LPARAM, RPC_E_WRONG_THREAD, WPARAM};
 use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx, CoUninitialize};
@@ -10,6 +10,8 @@ use windows::Win32::UI::Accessibility::*;
 use windows_core::{
     BOOL, BSTR, ComObject, Error, HRESULT, IUnknown, Interface, PCWSTR, Result, implement,
 };
+
+pub type UiaBounds = UiaRect;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(usize)]
@@ -62,6 +64,7 @@ pub enum UiaPattern {
     ExpandCollapse,
     RangeValue,
     Toggle,
+    Invoke,
 }
 
 const NO_PATTERNS: &[UiaPattern] = &[];
@@ -71,6 +74,7 @@ const SELECTION_PATTERN: &[UiaPattern] = &[UiaPattern::SelectionItem];
 const EXPAND_PATTERN: &[UiaPattern] = &[UiaPattern::ExpandCollapse];
 const RANGE_PATTERN: &[UiaPattern] = &[UiaPattern::RangeValue];
 const TOGGLE_PATTERN: &[UiaPattern] = &[UiaPattern::Toggle];
+const INVOKE_PATTERN: &[UiaPattern] = &[UiaPattern::Invoke];
 
 struct WidgetPresentation {
     role: UiaRole,
@@ -88,7 +92,7 @@ const PRESENTATIONS: [WidgetPresentation; 14] = [
     WidgetPresentation {
         role: UiaRole::Button,
         live: UiaLiveSetting::Off,
-        patterns: NO_PATTERNS,
+        patterns: INVOKE_PATTERN,
     },
     WidgetPresentation {
         role: UiaRole::CheckBox,
@@ -239,6 +243,18 @@ impl UiaMetadata {
     }
 }
 
+pub fn widget_metadata(
+    kind: WidgetKind,
+    id: impl Into<String>,
+    name: impl Into<String>,
+) -> UiaMetadata {
+    UiaMetadata {
+        automation_id: id.into(),
+        name: name.into(),
+        ..UiaMetadata::new(kind)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum UiaAction {
     Value(String),
@@ -246,9 +262,23 @@ pub enum UiaAction {
     Selected(bool),
     Expanded(bool),
     Toggled(bool),
+    Invoke,
 }
 
-pub type UiaActionHandler = Arc<dyn Fn(UiaAction) -> Result<()> + Send + Sync>;
+/// UI-thread action callback. The provider STA enforces the calling apartment.
+pub type UiaActionHandler = Rc<dyn Fn(UiaAction) -> Result<()> + 'static>;
+
+pub fn uia_action_error(message: impl AsRef<str>) -> Error {
+    Error::new(E_FAIL, message)
+}
+
+pub(crate) fn ensure_thread(owner: ThreadId) -> Result<()> {
+    if owner == std::thread::current().id() {
+        Ok(())
+    } else {
+        Err(Error::from_hresult(RPC_E_WRONG_THREAD))
+    }
+}
 
 struct StaApartment {
     owner: ThreadId,
@@ -263,11 +293,7 @@ impl StaApartment {
     }
 
     fn ensure_owner(&self) -> Result<()> {
-        if self.owner == std::thread::current().id() {
-            Ok(())
-        } else {
-            Err(Error::from_hresult(RPC_E_WRONG_THREAD))
-        }
+        ensure_thread(self.owner)
     }
 }
 
@@ -364,6 +390,7 @@ impl UiaState {
             UiaAction::Selected(selected) => metadata.selected = selected,
             UiaAction::Expanded(expanded) => metadata.expanded = expanded,
             UiaAction::Toggled(toggled) => metadata.toggled = toggled,
+            UiaAction::Invoke => {}
         }
         Ok(())
     }
@@ -552,12 +579,24 @@ impl IToggleProvider_Impl for TogglePattern_Impl {
     }
 }
 
+#[implement(IInvokeProvider)]
+struct InvokePattern {
+    state: Rc<UiaState>,
+}
+
+impl IInvokeProvider_Impl for InvokePattern_Impl {
+    fn Invoke(&self) -> Result<()> {
+        self.state.apply(UiaAction::Invoke)
+    }
+}
+
 struct UiaPatterns(Vec<(UIA_PATTERN_ID, IUnknown)>);
 
 impl UiaPatterns {
     fn new(kind: WidgetKind, state: &Rc<UiaState>) -> Self {
         let entries = uia_patterns(kind)
             .iter()
+            .filter(|pattern| **pattern != UiaPattern::Invoke || state.handler.is_some())
             .map(|pattern| {
                 let state = Rc::clone(state);
                 match pattern {
@@ -583,6 +622,10 @@ impl UiaPatterns {
                         let provider: IToggleProvider = TogglePattern { state }.into();
                         (UIA_TogglePatternId, IUnknown::from(provider))
                     }
+                    UiaPattern::Invoke => {
+                        let provider: IInvokeProvider = InvokePattern { state }.into();
+                        (UIA_InvokePatternId, IUnknown::from(provider))
+                    }
                 }
             })
             .collect();
@@ -607,6 +650,8 @@ impl UiaProvider {
             | UIA_NamePropertyId
             | UIA_HelpTextPropertyId
             | UIA_IsEnabledPropertyId
+            | UIA_IsControlElementPropertyId
+            | UIA_IsContentElementPropertyId
             | UIA_IsKeyboardFocusablePropertyId
             | UIA_LiveSettingPropertyId => Ok(Self::basic_property(&metadata, property_id)),
             UIA_ValueValuePropertyId
@@ -626,9 +671,12 @@ impl UiaProvider {
             | UIA_IsSelectionItemPatternAvailablePropertyId
             | UIA_IsExpandCollapsePatternAvailablePropertyId
             | UIA_IsRangeValuePatternAvailablePropertyId
-            | UIA_IsTogglePatternAvailablePropertyId => {
-                Ok(pattern_availability(&metadata, property_id))
-            }
+            | UIA_IsTogglePatternAvailablePropertyId
+            | UIA_IsInvokePatternAvailablePropertyId => Ok(pattern_availability(
+                &metadata,
+                property_id,
+                self.state.handler.is_some(),
+            )),
             UIA_NativeWindowHandlePropertyId => self.host_property(),
             _ => empty_property(),
         }
@@ -643,6 +691,7 @@ impl UiaProvider {
                 metadata.description.as_str().into()
             }
             UIA_IsEnabledPropertyId => (!metadata.disabled).into(),
+            UIA_IsControlElementPropertyId | UIA_IsContentElementPropertyId => true.into(),
             UIA_IsKeyboardFocusablePropertyId => metadata.keyboard_focusable().into(),
             UIA_LiveSettingPropertyId => uia_live_setting(metadata.kind).native().0.into(),
             _ => VARIANT::default(),
@@ -764,16 +813,21 @@ impl UiaProvider {
 }
 
 #[allow(non_upper_case_globals)] // Preserve Windows SDK UIA_* identifiers verbatim.
-fn pattern_availability(metadata: &UiaMetadata, property_id: UIA_PROPERTY_ID) -> VARIANT {
+fn pattern_availability(
+    metadata: &UiaMetadata,
+    property_id: UIA_PROPERTY_ID,
+    handler_present: bool,
+) -> VARIANT {
     let pattern = match property_id {
         UIA_IsValuePatternAvailablePropertyId => UiaPattern::Value,
         UIA_IsSelectionItemPatternAvailablePropertyId => UiaPattern::SelectionItem,
         UIA_IsExpandCollapsePatternAvailablePropertyId => UiaPattern::ExpandCollapse,
         UIA_IsRangeValuePatternAvailablePropertyId => UiaPattern::RangeValue,
         UIA_IsTogglePatternAvailablePropertyId => UiaPattern::Toggle,
+        UIA_IsInvokePatternAvailablePropertyId => UiaPattern::Invoke,
         _ => return VARIANT::default(),
     };
-    supports(metadata, pattern).into()
+    (supports(metadata, pattern) && (pattern != UiaPattern::Invoke || handler_present)).into()
 }
 
 fn supports(metadata: &UiaMetadata, pattern: UiaPattern) -> bool {
@@ -881,29 +935,34 @@ impl UiaProviderHandle {
     }
 
     pub fn announce(&self) -> Result<()> {
-        let metadata = self.object.state.snapshot()?;
-        let provider = self.raw_provider();
-        match metadata.kind {
-            WidgetKind::Caption => {
-                // SAFETY: the provider is alive for the duration of the event call.
-                unsafe { UiaRaiseAutomationEvent(&provider, UIA_LiveRegionChangedEventId) }
-            }
-            WidgetKind::Status | WidgetKind::Alert => {
-                let text = BSTR::from(metadata.value.unwrap_or(metadata.name));
-                let activity = BSTR::from(metadata.automation_id);
-                let (kind, processing) = if metadata.kind == WidgetKind::Alert {
-                    (NotificationKind_Other, NotificationProcessing_ImportantAll)
-                } else {
-                    (
-                        NotificationKind_ActionCompleted,
-                        NotificationProcessing_ImportantMostRecent,
-                    )
-                };
-                // SAFETY: both BSTRs and the provider outlive the event call.
-                unsafe { UiaRaiseNotificationEvent(&provider, kind, processing, &text, &activity) }
-            }
-            _ => Ok(()),
+        announce_metadata(&self.raw_provider(), self.object.state.snapshot()?)
+    }
+}
+
+pub fn announce_metadata(
+    provider: &IRawElementProviderSimple,
+    metadata: UiaMetadata,
+) -> Result<()> {
+    match metadata.kind {
+        WidgetKind::Caption => {
+            // SAFETY: the provider is alive for the duration of the event call.
+            unsafe { UiaRaiseAutomationEvent(provider, UIA_LiveRegionChangedEventId) }
         }
+        WidgetKind::Status | WidgetKind::Alert => {
+            let text = BSTR::from(metadata.value.unwrap_or(metadata.name));
+            let activity = BSTR::from(metadata.automation_id);
+            let (kind, processing) = if metadata.kind == WidgetKind::Alert {
+                (NotificationKind_Other, NotificationProcessing_ImportantAll)
+            } else {
+                (
+                    NotificationKind_ActionCompleted,
+                    NotificationProcessing_ImportantMostRecent,
+                )
+            };
+            // SAFETY: both BSTRs and the provider outlive the event call.
+            unsafe { UiaRaiseNotificationEvent(provider, kind, processing, &text, &activity) }
+        }
+        _ => Ok(()),
     }
 }
 
@@ -917,9 +976,9 @@ impl UiaProviderFactory {
 
     pub fn create_with_handler<F>(metadata: UiaMetadata, handler: F) -> Result<UiaProviderHandle>
     where
-        F: Fn(UiaAction) -> Result<()> + Send + Sync + 'static,
+        F: Fn(UiaAction) -> Result<()> + 'static,
     {
-        Self::build(metadata, Some(Arc::new(handler)))
+        Self::build(metadata, Some(Rc::new(handler)))
     }
 
     fn build(

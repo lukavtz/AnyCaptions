@@ -3,6 +3,7 @@
 //! Pure geometry and presenter logic remain in `anycaptions-core`.
 
 pub mod accessibility;
+pub mod accessibility_tree;
 pub mod hotkeys;
 pub mod single_instance;
 pub mod system;

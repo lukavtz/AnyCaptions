@@ -4,6 +4,9 @@
 
 pub mod assets;
 pub mod caption;
+pub mod dictation;
+pub mod overlay;
+pub mod settings;
 pub mod text_measurement;
 pub mod theme;
 pub mod widgets;
