@@ -1,0 +1,117 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Numeric release version (x.y.z)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: anycaptions-release
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    environment: release
+    timeout-minutes: 180
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: 0
+      RC: C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\rc.exe
+      GPUI_FXC_PATH: C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\fxc.exe
+      MAKENSIS_EXE: C:\Program Files (x86)\NSIS\makensis.exe
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Provision and validate pinned inputs
+        shell: powershell
+        run: |
+          foreach ($tool in @($env:RC, $env:GPUI_FXC_PATH)) {
+            if (-not (Test-Path -LiteralPath $tool -PathType Leaf)) {
+              throw "Pinned Windows SDK tool is missing: $tool"
+            }
+          }
+          # Fetch only the hash-pinned upstream assets: DLLs from the update
+          # zip and models from a silent, verified official installation.
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-release.ps1 -ProvisionFromUpstream -InputsOnly
+          exit $LASTEXITCODE
+
+      - name: Validate release version
+        shell: powershell
+        run: |
+          $metadataJson = cargo metadata --locked --no-deps --format-version 1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $metadata = $metadataJson | ConvertFrom-Json
+          $package = $metadata.packages | Where-Object { $_.name -eq 'anycaptions' } | Select-Object -First 1
+          if ($null -eq $package) { throw 'The anycaptions host package is missing.' }
+          if ($package.version -cne '${{ inputs.version }}') {
+            throw "Release version '${{ inputs.version }}' does not match crate version '$($package.version)'."
+          }
+
+      - name: Install pinned NSIS and minisign
+        shell: powershell
+        run: |
+          choco install nsis --version 3.11.0 --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $archive = Join-Path $env:RUNNER_TEMP 'minisign-0.12-win64.zip'
+          Invoke-WebRequest -Uri 'https://github.com/jedisct1/minisign/releases/download/0.12/minisign-0.12-win64.zip' -OutFile $archive -UseBasicParsing
+          $actualHash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actualHash -cne '37b600344e20c19314b2e82813db2bfdcc408b77b876f7727889dbd46d539479') {
+            throw "Minisign archive SHA-256 mismatch: $actualHash"
+          }
+          $destination = Join-Path $env:RUNNER_TEMP 'minisign-0.12'
+          Expand-Archive -LiteralPath $archive -DestinationPath $destination -Force
+          $minisign = Get-ChildItem -LiteralPath $destination -Recurse -Filter minisign.exe | Select-Object -First 1
+          if ($null -eq $minisign) { throw 'The pinned minisign archive has no minisign.exe.' }
+          "MINISIGN_EXE=$($minisign.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Build release executable
+        run: cargo build --release --locked --package anycaptions
+
+      - name: Install update secret key
+        shell: powershell
+        env:
+          ANYCAPTIONS_UPDATE_KEY_CONTENT: ${{ secrets.ANYCAPTIONS_UPDATE_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:ANYCAPTIONS_UPDATE_KEY_CONTENT)) {
+            throw 'ANYCAPTIONS_UPDATE_KEY must contain the unencrypted minisign secret key.'
+          }
+          $keyPath = Join-Path $env:RUNNER_TEMP 'anycaptions-updater.key'
+          [IO.File]::WriteAllText($keyPath, $env:ANYCAPTIONS_UPDATE_KEY_CONTENT, [Text.UTF8Encoding]::new($false))
+          "ANYCAPTIONS_UPDATE_KEY=$keyPath" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Package and verify installer/update assets
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-release.ps1 `
+            -Version '${{ inputs.version }}' `
+            -NsisPath $env:MAKENSIS_EXE `
+            -MinisignPath $env:MINISIGN_EXE `
+            -SecretKeyPath $env:ANYCAPTIONS_UPDATE_KEY `
+            -SecretKeyHasNoPassword
+          exit $LASTEXITCODE
+
+      - name: Publish the four release assets
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = '${{ inputs.version }}'
+          $directory = Join-Path $env:GITHUB_WORKSPACE "release/$version"
+          $assets = @(
+            (Join-Path $directory "AnyCaptions_${version}_x64-setup.exe"),
+            (Join-Path $directory "anycaptions-update-$version.zip"),
+            (Join-Path $directory 'update.json'),
+            (Join-Path $directory 'update.json.minisig')
+          )
+          gh release create "v$version" @assets --target $env:GITHUB_SHA --title "AnyCaptions $version" --generate-notes
+          exit $LASTEXITCODE

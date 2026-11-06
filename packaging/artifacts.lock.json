@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "minisignPublicKey": "RWTcbjUZlwuKjzVjLhU49QKNIuIxHQ+8lu4VoAvJZgwDho+Mqf48H8Ap",
+  "runtime": {
+    "directory": "backend/local-data/nemo-speech/build-vulkan-asr/bin",
+    "expectedDllCount": 17,
+    "files": [
+      { "name": "abseil_dll.dll", "size": 2265600, "sha256": "fb7f84ffae4b575cf57c5caaee27ab0639466b591c0657700f107df197313b24" },
+      { "name": "ctranslate2.dll", "size": 8448000, "sha256": "2829de74caf4347a40eca0011f0a911c4bb1d629781fd29a29414b7d6cbf0e09" },
+      { "name": "ggml-base.dll", "size": 688640, "sha256": "396143636c7d53012c3550cdc8e6a9619e1b009db9b5f34bb7a8574144ab27d1" },
+      { "name": "ggml-cpu.dll", "size": 1006080, "sha256": "41a22cbb980f93da928101e8ec93c8ca20bea046879b1bf9998702ad1e4adbb2" },
+      { "name": "ggml-vulkan.dll", "size": 44262400, "sha256": "80f4a1d7aeff5d03de4001d46c2e3fd7f59d616187aa70d10633b2790b0eb261" },
+      { "name": "ggml.dll", "size": 62976, "sha256": "482862719d4e6c291297b34dc8026dc9f848b4a4b4d731ec6550237bafbdd441" },
+      { "name": "libprotobuf-lite.dll", "size": 1714688, "sha256": "a631e900d63cb8e9ae0b84c59055a1ada17300a7286953ddd7da16d3a80ab278" },
+      { "name": "libprotobuf.dll", "size": 12924928, "sha256": "513964a061b4e57e234b53c5573f1fd24758281558ae561b2e722115df93903e" },
+      { "name": "libprotoc.dll", "size": 12171264, "sha256": "11b02d1453259b6c8646ac6c6b14c69fdd5ec39a25db66106a0d9356bfa16d76" },
+      { "name": "libutf8_range.dll", "size": 10240, "sha256": "fe16833aa7b4bedbcb6a9a119e828e88066f5a6427a5c0ccfd7b81f557b2203f" },
+      { "name": "libutf8_validity.dll", "size": 10240, "sha256": "87c8bcfffd43dc8e802910e384e802fcd6da81570b8cf82589ef530ec28c919b" },
+      { "name": "llama.dll", "size": 2647552, "sha256": "011024c1038563460e7ba6a12f58014564abd4180db58e4e608e8cd77bb7ad5e" },
+      { "name": "nemo_speech_asr_c.dll", "size": 56832, "sha256": "971151d34d8bb8efd6194be2e6346695a1c5b29caa1dc3003942d80a333ad786" },
+      { "name": "nemo_speech_asr.dll", "size": 4266496, "sha256": "fa8e9428acf70821f5db5cadb28318d586db3cfcb5570f980b4fc00df0741d46" },
+      { "name": "nemo_speech_nmt_c.dll", "size": 23552, "sha256": "8ff3f2284a40e648f8549ba4be160a4d01c7094e1f58c40c2f16cd3147049f5f" },
+      { "name": "nemo_speech_nmt.dll", "size": 252416, "sha256": "fdc73c1892161b605214189e0229ebec89bca1545ea1c5a5106bc4f6665236d1" },
+      { "name": "opus_ct2_c.dll", "size": 355840, "sha256": "e014a14b2402b57d137ef6336980f445df26844a1862fcce20d08a5efd0eb7af" }
+    ]
+  },
+  "models": [
+    {
+      "directory": "backend/models/asr/nemotron-3.5-asr-streaming-0.6b",
+      "files": [
+        {
+          "name": "nemotron-3.5-asr-streaming-0.6b.q8_0.gguf",
+          "size": 742090464,
+          "sha256": "3fc991d3badad7277c11030a7519832cddaf2057aafed6d4b25147e953a070b1"
+        }
+      ]
+    },
+    {
+      "directory": "backend/models/translation/opus-mt-en-pt",
+      "files": [
+        { "name": "config.json", "size": 233, "sha256": "72901fbd8abd89fb5cf4a388f26fc681f5c4c58a1e1a88b30b879f107270e7ee" },
+        {
+          "name": "model.bin",
+          "size": 235625373,
+          "sha256": "5c2b607d9f0c00e935a00a497aa4c523225288697fbca57ddb7f9ee96fe80006"
+        },
+        { "name": "shared_vocabulary.json", "size": 1063207, "sha256": "c27223d6d29d670bfab4f6b7e073694ba1479ca9a3a9e723a5d0996989a84ff0" },
+        { "name": "source.spm", "size": 802741, "sha256": "7a7fcf812cf03a5785daa35d4932bbbe69e7e605c0fe56fce5a3f731d6c355aa" },
+        { "name": "target.spm", "size": 824855, "sha256": "b3cf20ccd4e48a89882cfdba157c05fa1cd71a6b69517dfc80e3a34d387ea91f" }
+      ]
+    },
+    {
+      "directory": "backend/models/translation/opus-mt-pt-en",
+      "files": [
+        { "name": "config.json", "size": 233, "sha256": "72901fbd8abd89fb5cf4a388f26fc681f5c4c58a1e1a88b30b879f107270e7ee" },
+        {
+          "name": "model.bin",
+          "size": 238996195,
+          "sha256": "b52ae8251ae34d6c8fd7bcc3d5202d6810ec6a8c005b89d762420f89d2f55fb2"
+        },
+        { "name": "shared_vocabulary.json", "size": 1048627, "sha256": "ecd13096ebecefda199207b0488536d9be99323c579698a1db09968c8d488974" },
+        { "name": "source.spm", "size": 808605, "sha256": "adda68b5bfa9a3dd63794193af5423933eb86896aa2be1f4f8a750994dbee140" },
+        { "name": "target.spm", "size": 799586, "sha256": "c3ce42eb9d1ca0b2c7926be6b80e3391a86ed2d8291e0982cc2509f65f8d2953" }
+      ]
+    }
+  ],
+  "upstreamRelease": {
+    "version": "0.2.0",
+    "baseUrl": "https://github.com/EduardoViniciusJ/AnyCaptions/releases/download/v0.2.0",
+    "assets": {
+      "anycaptions-update-0.2.0.zip": {
+        "size": 28162248,
+        "sha256": "28e4f0b10806744aa3ccfd0534826d2437e66786597b384af45024a8d6e07ca6"
+      },
+      "AnyCaptions_0.2.0_x64-setup.exe": {
+        "size": 1143043015,
+        "sha256": "e13b14ad5feb74400a043fa6b64e56f0b1f8b6d9e34fdfbca5d0c07bec567e25"
+      },
+      "update.json": {
+        "sha256": "cb28f917c80e23926cf8eed9ac5c2bdf7173d7458a644289bf2c5beabb68a653"
+      },
+      "update.json.minisig": {
+        "sha256": "81833f90216a3da1dbe68c97582a384e35affbf64b38d269abe6ecb80c2a2164"
+      }
+    }
+  }
+}

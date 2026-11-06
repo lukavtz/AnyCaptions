@@ -2,7 +2,7 @@
 
 Arquivos de modelo (GGUF) organizados por capacidade. Eles não são versionados;
 a fonte da verdade sobre cada modelo (origem, revisão, licença e SHA-256) é o
-catálogo em `backend/src/models/catalog.rs`, que verifica o arquivo antes de carregar.
+catálogo em `crates/anycaptions-core/src/models/catalog.rs`, que verifica o arquivo antes de carregar.
 
 ```
 models/

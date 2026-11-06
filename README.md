@@ -49,13 +49,13 @@
 
 | Layer | Technologies |
 |---|---|
-| Desktop | Tauri 2 · Rust · WebView2 |
-| Interface | Vanilla TypeScript · Vite |
+| Desktop | GPUI · Rust · Win32 |
+| Interface | GPUI · Rust |
 | Audio capture | WASAPI loopback |
 | Local inference | NeMo-Speech.cpp · CTranslate2 · GPU (Vulkan) with CPU fallback |
 | Website ([`site/`](site/README.md)) | Astro · ASP.NET Core · PostgreSQL |
-| Tests | Vitest · Rust tests |
-| Code quality | TypeScript strict mode · Clippy · rustfmt |
+| Tests | Rust tests · PowerShell acceptance tests |
+| Code quality | Clippy · rustfmt · cargo-audit |
 
 ## Models
 
@@ -76,13 +76,12 @@ Inference runs on [NeMo-Speech.cpp](https://github.com/NVIDIA/NeMo-Speech.cpp) (
 
 The easiest way to use AnyCaptions is the Windows installer from [anycaptions.app](https://anycaptions.app).
 
-To build from source on Windows 11, install **Rust 1.90+ (MSVC, `x86_64-pc-windows-msvc`)**, the Visual Studio C++ build tools with the Windows SDK, the **WebView2 Runtime**, and **Node.js 24.15 or newer**. Then run:
+To build from source on Windows 11, install **Rust 1.90+ (MSVC, `x86_64-pc-windows-msvc`)** and the Visual Studio C++ build tools with the Windows SDK. Then run:
 
 ```powershell
 git clone https://github.com/EduardoViniciusJ/AnyCaptions.git
 cd AnyCaptions
-npm.cmd --prefix frontend ci
-npm.cmd --prefix frontend run tauri -- dev
+cargo run -p anycaptions
 ```
 
 Models and the inference libraries are not required to compile — only to transcribe and translate (see `backend/models/README.md`).
@@ -93,10 +92,12 @@ Models and the inference libraries are not required to compile — only to trans
 From the project root:
 
 ```powershell
-cargo test --manifest-path backend/Cargo.toml
-cargo clippy --manifest-path backend/Cargo.toml --all-targets -- -D warnings
-npm.cmd --prefix frontend run test -- --run
-npm.cmd --prefix frontend run typecheck
+cargo test --workspace --locked
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo audit
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-packaging.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-overlay.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-accessibility.ps1
 ```
 
 </details>

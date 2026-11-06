@@ -7,3 +7,7 @@ exclude = ["backend"]
 edition = "2024"
 rust-version = "1.90"
 license = "Apache-2.0"
+
+# Hashing the ~740 MB model on every debug start is slow without optimization.
+[profile.dev.package.sha2]
+opt-level = 3

@@ -1,0 +1,31 @@
+[package]
+name = "anycaptions"
+version = "0.2.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+build = "build.rs"
+
+[[bin]]
+name = "anycaptions"
+path = "src/main.rs"
+
+[build-dependencies]
+embed-resource = "3.0.12"
+
+[dependencies]
+anycaptions-core = { path = "../anycaptions-core" }
+anycaptions-ui = { path = "../anycaptions-ui" }
+anycaptions-platform-win32 = { path = "../anycaptions-platform-win32" }
+gpui = { version = "=0.2.2", default-features = false }
+async-channel = "2.5.0"
+raw-window-handle = "0.6"
+windows = { version = "0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[dev-dependencies]
+gpui = { version = "=0.2.2", default-features = false, features = ["test-support"] }
