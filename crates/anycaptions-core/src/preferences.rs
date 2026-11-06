@@ -232,14 +232,17 @@ fn replace_file(source: &Path, destination: &Path) -> io::Result<()> {
         .chain(Some(0))
         .collect::<Vec<_>>();
     // SAFETY: both paths are NUL-terminated and remain alive for the synchronous call.
-    unsafe {
+    let result = unsafe {
         MoveFileExW(
             PCWSTR(source.as_ptr()),
             PCWSTR(destination.as_ptr()),
             MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
         )
+    };
+    if let Err(error) = &result {
+        eprintln!("MoveFileExW failed: {error}");
     }
-    .map_err(io::Error::other)
+    result.map_err(io::Error::other)
 }
 
 #[cfg(not(windows))]
