@@ -211,7 +211,10 @@ fn extract_package(
         let entry = archive
             .by_index(index)
             .map_err(|_| UpdateFailure::Corrupted)?;
-        let name = entry.name().to_owned();
+        let name = entry
+            .name()
+            .map_err(|_| UpdateFailure::Corrupted)?
+            .into_owned();
         if entry.is_dir() || !safe_file_name(&name, &[".exe", ".dll"]) {
             return Err(UpdateFailure::Corrupted);
         }

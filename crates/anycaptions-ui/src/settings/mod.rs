@@ -311,6 +311,21 @@ impl SettingsView {
         }
     }
 
+    pub(crate) fn set_source_language_expanded(
+        &mut self,
+        expanded: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.controls()
+            .languages
+            .source_language
+            .update(cx, |picker, cx| {
+                picker.set_expanded(expanded, window, cx);
+            });
+        cx.notify();
+    }
+
     pub fn report(&mut self, error: CommandError, cx: &mut Context<Self>) {
         self.application.report(error);
         cx.notify();

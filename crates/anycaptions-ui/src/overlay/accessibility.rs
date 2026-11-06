@@ -6,8 +6,7 @@ use anycaptions_core::{
 };
 use anycaptions_platform_win32::{
     accessibility::{
-        UiaAction, UiaMetadata, UiaProviderFactory, WidgetKind, uia_action_error,
-        widget_metadata as metadata,
+        UiaAction, UiaMetadata, UiaProviderFactory, WidgetKind, widget_metadata as metadata,
     },
     accessibility_tree::{
         LiveNode, UiaFragment, UiaTree, clear_live_node as clear_live, sync_live_node,
@@ -17,7 +16,10 @@ use gpui::{
     AnyWindowHandle, App, AsyncApp, Context, Entity, EntityId, WeakEntity, Window, prelude::*,
 };
 
-use crate::settings::{SettingsView, accessibility::SettingsAccessibility};
+use crate::{
+    create_uia_action_node, dispatch_uia_action,
+    settings::{SettingsView, accessibility::SettingsAccessibility},
+};
 
 use super::{OverlayCommand, OverlayView, native_effects, toolbar::ToolbarPaintBounds};
 
@@ -36,7 +38,7 @@ pub(crate) struct OverlayAccessibility {
     observer: std::rc::Weak<RefCell<Self>>,
     toolbar: Option<ToolbarNodes>,
     caption: Option<LiveNode>,
-    settings: Option<SettingsAccessibility>,
+    settings: Option<Rc<RefCell<SettingsAccessibility>>>,
     settings_id: Option<EntityId>,
     notice: Option<LiveNode>,
     update_notice: Option<LiveNode>,
@@ -183,7 +185,7 @@ impl OverlayAccessibility {
     fn sync(
         &mut self,
         view: &Entity<OverlayView>,
-        window: &Window,
+        window: &mut Window,
         cx: &mut App,
     ) -> gpui::Result<()> {
         let OverlayUiaSnapshot {
@@ -258,11 +260,15 @@ impl OverlayAccessibility {
             self.toolbar = None;
             return Ok(());
         }
+        let language_expanded = view.read(cx).toolbar.language_expanded(cx);
         if self.toolbar.is_none() {
             self.toolbar = Some(ToolbarNodes::attach(
                 &self.root,
-                snapshot,
-                busy,
+                ToolbarState {
+                    snapshot,
+                    busy,
+                    language_expanded,
+                },
                 view.downgrade(),
                 cx.to_async(),
                 window.window_handle(),
@@ -272,7 +278,7 @@ impl OverlayAccessibility {
         self.toolbar
             .as_ref()
             .expect("toolbar created")
-            .sync(snapshot, busy)
+            .sync(snapshot, busy, language_expanded)
     }
 
     fn sync_caption(&mut self, text: String, hidden: bool) -> gpui::Result<()> {
@@ -324,7 +330,7 @@ impl OverlayAccessibility {
         _view: &Entity<OverlayView>,
         settings_view: Option<gpui::AnyView>,
         open: bool,
-        window: &Window,
+        window: &mut Window,
         cx: &mut App,
     ) -> gpui::Result<()> {
         let entity = open
@@ -340,41 +346,115 @@ impl OverlayAccessibility {
             self.settings = None;
             self.settings_id = Some(entity.entity_id());
         }
-        if let Some(accessibility) = self.settings.as_mut() {
-            entity.update(cx, |view, cx| accessibility.sync(view, window, cx))?;
-        } else {
-            let weak = entity.downgrade();
-            let settings = entity.update(cx, |view, cx| {
-                SettingsAccessibility::attach(&self.root, view, weak, window, cx)
+        if let Some(accessibility) = self.settings.as_ref() {
+            let accessibility = Rc::clone(accessibility);
+            entity.update(cx, |view, cx| {
+                let mut accessibility = accessibility
+                    .try_borrow_mut()
+                    .map_err(|_| std::io::Error::other("UIA settings sync re-entered"))?;
+                accessibility.sync(view, window, cx)
             })?;
-            self.settings = Some(settings);
+            return Ok(());
         }
+        let weak = entity.downgrade();
+        let settings = entity.update(cx, |view, cx| {
+            SettingsAccessibility::attach(&self.root, view, weak, window, cx)
+        })?;
+        let settings = Rc::new(RefCell::new(settings));
+        self.settings = Some(Rc::clone(&settings));
+        self.observe_settings(&entity, window, cx, settings);
         Ok(())
     }
+
+    fn observe_settings(
+        &mut self,
+        entity: &Entity<SettingsView>,
+        window: &mut Window,
+        cx: &mut App,
+        accessibility: Rc<RefCell<SettingsAccessibility>>,
+    ) {
+        let accessibility = Rc::downgrade(&accessibility);
+        window
+            .observe(entity, cx, move |view, window, cx| {
+                let Some(accessibility) = accessibility.upgrade() else {
+                    return;
+                };
+                let result = accessibility
+                    .try_borrow_mut()
+                    .map_err(|_| "UIA settings observer re-entered".to_owned())
+                    .and_then(|mut accessibility| {
+                        accessibility
+                            .sync(view.read(cx), window, cx)
+                            .map_err(|error| error.to_string())
+                    });
+                if let Err(error) = result {
+                    eprintln!("AnyCaptions settings UIA synchronization failed: {error}");
+                }
+            })
+            .detach();
+    }
+}
+
+#[derive(Clone, Copy)]
+struct ToolbarState<'a> {
+    snapshot: &'a AppSnapshot,
+    busy: bool,
+    language_expanded: bool,
 }
 
 impl ToolbarNodes {
     fn attach(
         root: &UiaFragment,
-        snapshot: &AppSnapshot,
-        busy: bool,
+        state: ToolbarState<'_>,
         weak: WeakEntity<OverlayView>,
         app: AsyncApp,
         window: AnyWindowHandle,
         paint_bounds: Rc<ToolbarPaintBounds>,
     ) -> gpui::Result<Self> {
-        let (capture, language) = Self::attach_capture_and_language(
+        let capture = add_toolbar_action_node(
             root,
-            snapshot,
-            busy,
+            capture_metadata(state.snapshot, state.busy),
+            ToolbarAction::Capture,
             weak.clone(),
             app.clone(),
             window,
         )?;
-        let (settings, lock, close) = Self::attach_settings_lock_close(
+        let language = create_uia_action_node(
             root,
-            snapshot,
-            busy,
+            language_metadata(state.snapshot, state.busy, state.language_expanded),
+            app.clone(),
+            {
+                let weak = weak.clone();
+                move |action, app| {
+                    let UiaAction::Expanded(expanded) = action else {
+                        return Ok(());
+                    };
+                    dispatch_uia_action(app, window, &weak, move |view, window, cx| {
+                        view.toolbar.set_language_expanded(expanded, window, cx);
+                    })
+                }
+            },
+        )?;
+        let settings = add_toolbar_action_node(
+            root,
+            static_button_metadata("settings-toggle", MessageKey::Settings),
+            ToolbarAction::Settings,
+            weak.clone(),
+            app.clone(),
+            window,
+        )?;
+        let lock = add_toolbar_action_node(
+            root,
+            lock_metadata(state.snapshot, state.busy),
+            ToolbarAction::Lock,
+            weak.clone(),
+            app.clone(),
+            window,
+        )?;
+        let close = add_toolbar_action_node(
+            root,
+            static_button_metadata("close", MessageKey::CloseToTray),
+            ToolbarAction::Close,
             weak.clone(),
             app.clone(),
             window,
@@ -399,66 +479,16 @@ impl ToolbarNodes {
         })
     }
 
-    fn attach_capture_and_language(
-        root: &UiaFragment,
+    fn sync(
+        &self,
         snapshot: &AppSnapshot,
         busy: bool,
-        weak: WeakEntity<OverlayView>,
-        app: AsyncApp,
-        window: AnyWindowHandle,
-    ) -> gpui::Result<(UiaFragment, UiaFragment)> {
-        let capture = add_toolbar_action_node(
-            root,
-            capture_metadata(snapshot, busy),
-            ToolbarAction::Capture,
-            weak,
-            app,
-            window,
-        )?;
-        let language = add_toolbar_node(root, language_metadata(snapshot, busy))?;
-        Ok((capture, language))
-    }
-
-    fn attach_settings_lock_close(
-        root: &UiaFragment,
-        snapshot: &AppSnapshot,
-        busy: bool,
-        weak: WeakEntity<OverlayView>,
-        app: AsyncApp,
-        window: AnyWindowHandle,
-    ) -> gpui::Result<(UiaFragment, UiaFragment, UiaFragment)> {
-        let settings = add_toolbar_action_node(
-            root,
-            static_button_metadata("settings-toggle", MessageKey::Settings),
-            ToolbarAction::Settings,
-            weak.clone(),
-            app.clone(),
-            window,
-        )?;
-        let lock = add_toolbar_action_node(
-            root,
-            lock_metadata(snapshot, busy),
-            ToolbarAction::Lock,
-            weak.clone(),
-            app.clone(),
-            window,
-        )?;
-        let close = add_toolbar_action_node(
-            root,
-            static_button_metadata("close", MessageKey::CloseToTray),
-            ToolbarAction::Close,
-            weak,
-            app,
-            window,
-        )?;
-        Ok((settings, lock, close))
-    }
-
-    fn sync(&self, snapshot: &AppSnapshot, busy: bool) -> gpui::Result<()> {
+        language_expanded: bool,
+    ) -> gpui::Result<()> {
         self.capture
             .set_metadata(capture_metadata(snapshot, busy))?;
         self.language
-            .set_metadata(language_metadata(snapshot, busy))?;
+            .set_metadata(language_metadata(snapshot, busy, language_expanded))?;
         self.settings.set_metadata(static_button_metadata(
             "settings-toggle",
             MessageKey::Settings,
@@ -489,23 +519,14 @@ fn add_toolbar_action_node(
     app: AsyncApp,
     window: AnyWindowHandle,
 ) -> gpui::Result<UiaFragment> {
-    let app = Rc::new(RefCell::new(app));
-    let provider = UiaProviderFactory::create_with_handler(metadata, move |action_kind| {
+    create_uia_action_node(root, metadata, app, move |action_kind, app| {
         if action_kind != UiaAction::Invoke {
             return Ok(());
         }
-        let result = app
-            .borrow_mut()
-            .update_window(window, |_, window, cx| {
-                weak.update(cx, |view, cx| {
-                    invoke_toolbar_action(action, view, window, cx);
-                })
-            })
-            .map_err(|error| uia_action_error(error.to_string()))?;
-        result.map_err(|error| uia_action_error(error.to_string()))?;
-        Ok(())
-    })?;
-    Ok(root.add_child(provider)?)
+        dispatch_uia_action(app, window, &weak, move |view, window, cx| {
+            invoke_toolbar_action(action, view, window, cx);
+        })
+    })
 }
 
 fn invoke_toolbar_action(
@@ -532,10 +553,6 @@ fn invoke_toolbar_action(
     }
 }
 
-fn add_toolbar_node(root: &UiaFragment, metadata: UiaMetadata) -> gpui::Result<UiaFragment> {
-    Ok(root.add_child(UiaProviderFactory::create(metadata)?)?)
-}
-
 fn locale(snapshot: &AppSnapshot) -> Locale {
     Locale::from_tag(snapshot.ui_language.tag()).unwrap_or_default()
 }
@@ -558,13 +575,14 @@ fn capture_metadata(snapshot: &AppSnapshot, busy: bool) -> UiaMetadata {
     }
 }
 
-fn language_metadata(snapshot: &AppSnapshot, busy: bool) -> UiaMetadata {
+fn language_metadata(snapshot: &AppSnapshot, busy: bool, expanded: bool) -> UiaMetadata {
     let locale = locale(snapshot);
     let name = match snapshot.mode {
         CaptionMode::Auto => text(locale, MessageKey::TranscribeMode).to_owned(),
         CaptionMode::Translate(_) => text(locale, MessageKey::TranslateTo).to_owned(),
     };
     UiaMetadata {
+        expanded,
         disabled: busy || snapshot.window_mode == WindowMode::Locked,
         ..metadata(WidgetKind::Picker, "language", name)
     }

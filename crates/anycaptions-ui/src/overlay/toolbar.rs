@@ -342,6 +342,22 @@ impl Toolbar {
         self.settings.read(cx).focus_handle(cx)
     }
 
+    pub fn language_expanded(&self, cx: &App) -> bool {
+        self.language.read(cx).is_open()
+    }
+
+    pub fn set_language_expanded(
+        &self,
+        expanded: bool,
+        window: &mut Window,
+        cx: &mut Context<OverlayView>,
+    ) {
+        self.language.update(cx, |picker, cx| {
+            picker.set_expanded(expanded, window, cx);
+        });
+        cx.notify();
+    }
+
     pub fn render(&self, stopped: bool) -> impl IntoElement {
         let capture = if stopped {
             self.start.clone()

@@ -139,6 +139,14 @@ impl Picker {
         self.open
     }
 
+    pub fn set_expanded(&mut self, expanded: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if expanded {
+            self.open_menu(window, cx);
+        } else {
+            self.close(true, window, cx);
+        }
+    }
+
     fn selectable(option: &PickerOption) -> bool {
         !option.hidden && !option.disabled
     }

@@ -61,7 +61,7 @@ jobs:
         run: cargo build --workspace --locked
 
       - name: Install pinned cargo-audit
-        run: cargo install cargo-audit --version 0.21.1 --locked
+        run: cargo install cargo-audit --version 0.22.2 --locked
 
       - name: Audit dependencies
         run: cargo audit

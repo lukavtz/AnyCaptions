@@ -2,7 +2,8 @@ use std::{cell::RefCell, rc::Rc};
 
 use anycaptions_platform_win32::{
     accessibility::{
-        UiaMetadata, UiaProviderFactory, UiaRange, WidgetKind, widget_metadata as metadata,
+        UiaAction, UiaMetadata, UiaProviderFactory, UiaRange, WidgetKind,
+        widget_metadata as metadata,
     },
     accessibility_tree::{LiveNode, UiaFragment, sync_live_node},
 };
@@ -13,7 +14,10 @@ use super::{
     SOURCE_LANGUAGE_AUTOMATION_ID, SOURCE_LANGUAGE_MENU_AUTOMATION_ID, SettingsView,
     languages::asr_options,
 };
-use crate::widgets::{Down, Home};
+use crate::{
+    create_uia_action_node, dispatch_uia_action,
+    widgets::{Down, Home},
+};
 
 struct MenuNodes {
     root: UiaFragment,
@@ -58,10 +62,36 @@ impl SettingsAccessibility {
             SETTINGS_AUTOMATION_ID,
             view.text(anycaptions_core::presentation::MessageKey::Settings),
         ))?)?;
-        let color = root.add_child(UiaProviderFactory::create(color_metadata(view))?)?;
-        let picker = root.add_child(UiaProviderFactory::create(picker_metadata(view, cx))?)?;
         let app = cx.to_async();
         let window_handle = window.window_handle();
+        let color_weak = weak.clone();
+        let color = create_uia_action_node(
+            &root,
+            color_metadata(view),
+            app.clone(),
+            move |action, app| {
+                let UiaAction::Value(value) = action else {
+                    return Ok(());
+                };
+                dispatch_uia_action(app, window_handle, &color_weak, move |view, window, cx| {
+                    view.set_color_text(ColorTarget::Confirmed, &value, window, cx);
+                })
+            },
+        )?;
+        let picker_weak = weak.clone();
+        let picker = create_uia_action_node(
+            &root,
+            picker_metadata(view, cx),
+            app.clone(),
+            move |action, app| {
+                let UiaAction::Expanded(expanded) = action else {
+                    return Ok(());
+                };
+                dispatch_uia_action(app, window_handle, &picker_weak, move |view, window, cx| {
+                    view.set_source_language_expanded(expanded, window, cx);
+                })
+            },
+        )?;
         install_focus_handlers(
             &root,
             &color,
@@ -299,7 +329,7 @@ impl Drop for SettingsAccessibility {
 fn picker_metadata(view: &SettingsView, cx: &App) -> UiaMetadata {
     UiaMetadata {
         expanded: view.automation_state(cx).source_language_expanded,
-        disabled: view.primary_disabled(),
+        disabled: !view.open || view.application().busy() || view.save_requested,
         ..metadata(
             WidgetKind::Picker,
             SOURCE_LANGUAGE_AUTOMATION_ID,

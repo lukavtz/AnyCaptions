@@ -201,9 +201,28 @@ impl UiaFragment {
     }
 
     pub fn set_metadata(&self, metadata: UiaMetadata) -> Result<()> {
-        let state = self.state.try_borrow().map_err(|_| state_error())?;
-        state.ensure_owner()?;
-        state.node(self.id)?.provider.set_metadata(metadata)
+        let previous_disabled = self.metadata()?.disabled;
+        let disabled = metadata.disabled;
+        {
+            let state = self.state.try_borrow().map_err(|_| state_error())?;
+            state.ensure_owner()?;
+            state.node(self.id)?.provider.set_metadata(metadata)?;
+        }
+        if previous_disabled != disabled {
+            let provider = self.raw_provider()?;
+            let previous_value = VARIANT::from(previous_disabled);
+            let new_value = VARIANT::from(disabled);
+            // SAFETY: the fragment provider and variants outlive the synchronous event call.
+            unsafe {
+                UiaRaiseAutomationPropertyChangedEvent(
+                    &provider,
+                    UIA_IsEnabledPropertyId,
+                    &previous_value,
+                    &new_value,
+                )
+            }?;
+        }
+        Ok(())
     }
 
     pub fn set_bounds(&self, bounds: UiaRect) -> Result<()> {

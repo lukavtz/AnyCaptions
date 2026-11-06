@@ -44,6 +44,7 @@ impl LanguageControls {
     ) -> Self {
         let snapshot = view.application.snapshot();
         let disabled = view.primary_disabled();
+        let source_disabled = !view.open || view.application().busy() || view.save_requested;
 
         let ui_options = UI_LANGUAGES
             .iter()
@@ -73,7 +74,7 @@ impl LanguageControls {
         let source_language = cx.new(|cx| {
             FlagPicker::new(source_options, window, cx)
                 .with_selected(source_selected)
-                .disabled(disabled)
+                .disabled(source_disabled)
                 .on_change(move |value, window, cx| {
                     let _ = source_weak.update(cx, |view, cx| {
                         view.select_source_language(value.to_string(), window, cx)
