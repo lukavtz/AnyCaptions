@@ -231,18 +231,23 @@ fn replace_file(source: &Path, destination: &Path) -> io::Result<()> {
         .encode_wide()
         .chain(Some(0))
         .collect::<Vec<_>>();
-    // SAFETY: both paths are NUL-terminated and remain alive for the synchronous call.
-    let result = unsafe {
-        MoveFileExW(
-            PCWSTR(source.as_ptr()),
-            PCWSTR(destination.as_ptr()),
-            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
-        )
-    };
-    if let Err(error) = &result {
-        eprintln!("MoveFileExW failed: {error}");
+    // Windows search indexing or antivirus can briefly hold the destination after a read.
+    for attempt in 0..5 {
+        // SAFETY: both paths are NUL-terminated and remain alive for the synchronous call.
+        let result = unsafe {
+            MoveFileExW(
+                PCWSTR(source.as_ptr()),
+                PCWSTR(destination.as_ptr()),
+                MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+            )
+        };
+        match result {
+            Ok(()) => return Ok(()),
+            Err(_) if attempt < 4 => std::thread::sleep(std::time::Duration::from_millis(10)),
+            Err(error) => return Err(io::Error::other(error)),
+        }
     }
-    result.map_err(io::Error::other)
+    unreachable!("the replacement loop returns on every final attempt")
 }
 
 #[cfg(not(windows))]
