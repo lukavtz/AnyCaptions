@@ -1,5 +1,5 @@
 use anycaptions_core::{
-    models::{ModelKind, download::DownloadUpdate},
+    models::{ModelKind, catalog::NEMOTRON_STREAMING_EN_Q8, download::DownloadUpdate},
     presentation::{
         MessageKey,
         downloads::{DownloadView, ModelDownloadState},
@@ -14,10 +14,11 @@ use crate::{
     widgets::{Button, Progress},
 };
 
-use super::{ControlFocusExt, SettingsHostAction, SettingsView, focus_list, select_pair};
+use super::{ControlFocusExt, SettingsHostAction, SettingsView, focus_list};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DownloadRow {
+    EnglishAsr,
     Translation,
     Diarization,
 }
@@ -55,6 +56,7 @@ impl DownloadControls {
 }
 
 pub(super) struct ModelControls {
+    pub(super) english_asr: DownloadControls,
     pub(super) translation: DownloadControls,
     pub(super) diarization: DownloadControls,
 }
@@ -66,9 +68,17 @@ impl ModelControls {
         _window: &mut Window,
         cx: &mut Context<SettingsView>,
     ) -> Self {
+        let english_asr_view = view.download_view(DownloadRow::EnglishAsr);
         let translation_view = view.download_view(DownloadRow::Translation);
         let diarization_view = view.download_view(DownloadRow::Diarization);
         Self {
+            english_asr: DownloadControls::new(
+                view,
+                DownloadRow::EnglishAsr,
+                english_asr_view.as_ref(),
+                weak.clone(),
+                cx,
+            ),
             translation: DownloadControls::new(
                 view,
                 DownloadRow::Translation,
@@ -87,15 +97,18 @@ impl ModelControls {
     }
 
     fn row(&self, row: DownloadRow) -> &DownloadControls {
-        select_pair(
-            &self.translation,
-            &self.diarization,
-            matches!(row, DownloadRow::Diarization),
-        )
+        match row {
+            DownloadRow::EnglishAsr => &self.english_asr,
+            DownloadRow::Translation => &self.translation,
+            DownloadRow::Diarization => &self.diarization,
+        }
     }
 }
 
-impl_focus_handles!(ModelControls, [translation.action, diarization.action]);
+impl_focus_handles!(
+    ModelControls,
+    [english_asr.action, translation.action, diarization.action]
+);
 
 impl SettingsView {
     completion_method!(accept_models(models: Vec<ModelDownloadState>), |view| {
@@ -111,15 +124,19 @@ impl SettingsView {
         if !self.open {
             return;
         }
-        let focused_row = [DownloadRow::Translation, DownloadRow::Diarization]
-            .into_iter()
-            .find(|row| {
-                self.controls()
-                    .models
-                    .row(*row)
-                    .action
-                    .control_focused(window, cx)
-            });
+        let focused_row = [
+            DownloadRow::EnglishAsr,
+            DownloadRow::Translation,
+            DownloadRow::Diarization,
+        ]
+        .into_iter()
+        .find(|row| {
+            self.controls()
+                .models
+                .row(*row)
+                .action
+                .control_focused(window, cx)
+        });
         let ready = self.downloads.accept(update);
         if ready {
             self.emit(SettingsHostAction::RefreshModels);
@@ -160,6 +177,10 @@ impl SettingsView {
 
     pub fn download_view(&self, row: DownloadRow) -> Option<DownloadView> {
         match row {
+            DownloadRow::EnglishAsr => self.downloads.view_for_model(
+                NEMOTRON_STREAMING_EN_Q8.id,
+                MessageKey::EnglishAsrModelMissing,
+            ),
             DownloadRow::Translation => self.downloads.view_for_engine(
                 self.application.snapshot().translation_engine,
                 MessageKey::ModelDownloadMissing,
@@ -206,6 +227,12 @@ pub(super) fn render_download(view: &mut SettingsView, row: DownloadRow) -> impl
         .as_ref()
         .map_or_else(String::new, |download| view.download_status_label(download));
     let (row_id, status_id, action_id, progress_id) = match row {
+        DownloadRow::EnglishAsr => (
+            "english-asr-download",
+            "english-asr-download-status",
+            "english-asr-download-action",
+            "english-asr-download-progress",
+        ),
         DownloadRow::Translation => (
             "model-download",
             "model-download-status",

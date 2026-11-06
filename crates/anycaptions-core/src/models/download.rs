@@ -26,6 +26,9 @@ pub const RIVA_DOWNLOAD_BYTES: u64 = 2_759_302_368;
 /// pinned revision), shown on its download button.
 pub const DIARIZATION_DOWNLOAD_BYTES: u64 = 107_012_128;
 
+/// Exact size of the optional English-only Nemotron Streaming GGUF.
+pub const ENGLISH_ASR_DOWNLOAD_BYTES: u64 = 699_872_960;
+
 /// Where the Riva GGUF is served from; `ANYCAPTIONS_RIVA_URL` overrides it
 /// during development.
 const RIVA_DOWNLOAD_URL: &str = "https://huggingface.co/EduardoVinicius/anycaptions-riva-translate/resolve/main/riva-translate-4b-instruct-v2.q4_k_m.gguf";
@@ -35,6 +38,9 @@ const RIVA_DOWNLOAD_URL: &str = "https://huggingface.co/EduardoVinicius/anycapti
 /// can never change what the app installs. `ANYCAPTIONS_DIARIZATION_URL`
 /// overrides it during development.
 const DIARIZATION_DOWNLOAD_URL: &str = "https://huggingface.co/nvidia/Nemotron-3-Diarization/resolve/f667ed73aee57d40cc39428eb768b4fd87a0a29e/Nemotron-3-Diarization.q8_0.gguf";
+
+/// NVIDIA's pinned English ASR artifact; `ANYCAPTIONS_ENGLISH_ASR_URL` overrides it during development.
+const ENGLISH_ASR_DOWNLOAD_URL: &str = "https://huggingface.co/nvidia/nemotron-speech-streaming-en-0.6b/resolve/ebe59e5a817142986528bbbee5dba8db7b38ed50/nemotron-speech-streaming-en-0.6b.q8_0.gguf";
 
 /// A catalog model the app offers for download, with its pinned source.
 pub struct DownloadSource {
@@ -60,6 +66,11 @@ const DOWNLOADABLE_MODELS: &[DownloadableModel] = &[
         profile: &catalog::NEMOTRON_3_DIARIZATION_Q8,
         url: DIARIZATION_DOWNLOAD_URL,
         url_override: "ANYCAPTIONS_DIARIZATION_URL",
+    },
+    DownloadableModel {
+        profile: &catalog::NEMOTRON_STREAMING_EN_Q8,
+        url: ENGLISH_ASR_DOWNLOAD_URL,
+        url_override: "ANYCAPTIONS_ENGLISH_ASR_URL",
     },
 ];
 
@@ -259,7 +270,11 @@ fn run(
         .get("content-length")
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.parse::<u64>().ok());
-    if total.is_some_and(|bytes| bytes == 0 || bytes > profile.max_bytes) {
+    if total.is_some_and(|bytes| {
+        bytes == 0
+            || bytes > profile.max_bytes
+            || profile.size_bytes.is_some_and(|expected| bytes != expected)
+    }) {
         return Err(DownloadFailure::Corrupted);
     }
 
@@ -312,6 +327,12 @@ fn stream_to_part(
     }
     file.sync_all().map_err(|_| DownloadFailure::Disk)?;
     drop(file);
+    if profile
+        .size_bytes
+        .is_some_and(|expected| received != expected)
+    {
+        return Err(DownloadFailure::Corrupted);
+    }
     let digest: String = hasher
         .finalize()
         .iter()
@@ -339,6 +360,7 @@ mod tests {
         source: "local test server",
         license: "test",
         sha256: "9372c470eeadd5ecd9c3c74c2b3cb633f8e2f2fad799250a0f70d652b6b825e4",
+        size_bytes: Some(5),
         max_bytes: 1024,
     };
 
@@ -400,6 +422,16 @@ mod tests {
     }
 
     #[test]
+    fn an_unexpected_exact_size_is_rejected_before_reading() {
+        let root = isolated_root("wrong-size");
+        let url = serve(b"model", Some(4));
+        let never = AtomicBool::new(false);
+        let result = run(&TEST_PROFILE, &url, &root, &never, &mut |_, _| {});
+        assert_eq!(result, Err(DownloadFailure::Corrupted));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn an_oversized_content_length_is_rejected_before_reading() {
         let root = isolated_root("oversized");
         let url = serve(b"model", Some(4096));
@@ -425,9 +457,24 @@ mod tests {
     #[test]
     fn only_catalog_models_with_a_source_are_downloadable() {
         assert!(source_for("unknown-model").is_none());
-        // The ASR model ships with the installer and is never downloaded.
+        // The multilingual ASR ships with the installer and is never downloaded.
         assert!(source_for(catalog::NEMOTRON_STREAMING_Q8.id).is_none());
         assert!(!source_configured(catalog::NEMOTRON_STREAMING_Q8.id));
+        let english = source_for(catalog::NEMOTRON_STREAMING_EN_Q8.id).unwrap();
+        assert_eq!(english.profile.size_bytes, Some(ENGLISH_ASR_DOWNLOAD_BYTES));
+        assert!(source_configured(catalog::NEMOTRON_STREAMING_EN_Q8.id));
+        if std::env::var_os("ANYCAPTIONS_ENGLISH_ASR_URL").is_none() {
+            assert!(
+                english
+                    .url
+                    .contains(catalog::NEMOTRON_STREAMING_EN_Q8.revision)
+            );
+            assert!(
+                english
+                    .url
+                    .ends_with(catalog::NEMOTRON_STREAMING_EN_Q8.filename)
+            );
+        }
         // Riva only becomes downloadable once a URL is configured.
         assert_eq!(
             source_for(catalog::RIVA_TRANSLATE_Q4.id).is_some(),

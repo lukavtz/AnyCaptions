@@ -24,7 +24,7 @@ fn placeholders(message: &str) -> Vec<&str> {
 
 #[test]
 fn every_referenced_message_exists_in_every_locale() {
-    assert_eq!(MessageKey::ALL.len(), 118);
+    assert_eq!(MessageKey::ALL.len(), 119);
     for locale in Locale::ALL {
         for key in MessageKey::ALL {
             let message =
@@ -64,6 +64,10 @@ fn message_tables_keep_upstream_wording() {
     assert_eq!(
         translate(Locale::En, MessageKey::ModelDownloadAction),
         Some("Download ({size} GB)")
+    );
+    assert_eq!(
+        translate(Locale::En, MessageKey::EnglishAsrModelMissing),
+        Some("Optional English transcription model for an explicit US or UK English source.")
     );
     assert_eq!(MessageKey::ALL.first(), Some(&MessageKey::CaptionWindow));
     assert_eq!(

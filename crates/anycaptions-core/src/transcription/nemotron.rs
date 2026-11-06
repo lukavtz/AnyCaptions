@@ -16,7 +16,7 @@ use super::{
     streaming::{RecognizerError, SpeechResult, StreamingRecognizer, TaggedWord},
     tuning::RecognizerTuning,
 };
-use crate::{models::catalog::NEMOTRON_STREAMING_Q8, native::open_library};
+use crate::{models::ModelProfile, native::open_library};
 
 #[cfg(windows)]
 pub const LIBRARY_FILENAME: &str = "nemo_speech_asr_c.dll";
@@ -217,12 +217,13 @@ impl Api {
 pub struct NemotronPaths {
     pub library_dir: PathBuf,
     pub model: PathBuf,
+    pub profile: &'static ModelProfile,
     /// The optional Sortformer diarization GGUF (speaker labels).
     pub diarization: PathBuf,
 }
 
 /// The loaded model and its recognizer. Loading takes seconds and holds the
-/// model in (V)RAM, so the app shares one instance across caption sessions
+/// model in (V)RAM, so the app shares one instance per profile and context
 /// instead of reloading per session (repeated native reloads also leaked GPU
 /// memory until allocation failed). Per-session choices — language,
 /// endpointing and whether to tag speakers — travel in each stream's options;
@@ -230,6 +231,7 @@ pub struct NemotronPaths {
 pub struct NemotronModel {
     recognizer: *mut Recognizer,
     api: Api,
+    profile: &'static ModelProfile,
     /// The standalone diarizer loaded next to the recognizer (speaker labels).
     diarizer: Option<Arc<DiarizerModel>>,
 }
@@ -253,7 +255,8 @@ impl NemotronModel {
         rnnt_right_context: Option<i32>,
         diarization: bool,
     ) -> Result<Arc<Self>, RecognizerError> {
-        NEMOTRON_STREAMING_Q8
+        paths
+            .profile
             .verify(&paths.model)
             .map_err(|_| RecognizerError::ModelUnavailable)?;
         // The diarizer goes first: its failure must not cost a recognizer load.
@@ -286,8 +289,13 @@ impl NemotronModel {
         Ok(Arc::new(Self {
             recognizer,
             api,
+            profile: paths.profile,
             diarizer,
         }))
+    }
+
+    pub fn profile_id(&self) -> &'static str {
+        self.profile.id
     }
 
     /// Whether the diarizer is loaded, i.e. streams opened over this model
@@ -596,6 +604,7 @@ impl Drop for NativeNemotron {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::catalog::NEMOTRON_STREAMING_Q8;
 
     #[test]
     fn config_structs_match_the_c_layout() {
@@ -614,6 +623,7 @@ mod tests {
         let paths = NemotronPaths {
             library_dir: empty.clone(),
             model: empty.join("missing.gguf"),
+            profile: &NEMOTRON_STREAMING_Q8,
             diarization: empty.join("missing-diarization.gguf"),
         };
         assert!(matches!(
@@ -643,6 +653,7 @@ mod tests {
         let paths = NemotronPaths {
             library_dir: dir.clone(),
             model: fake_asr,
+            profile: &NEMOTRON_STREAMING_Q8,
             diarization: dir.join("missing-diarization.gguf"),
         };
         // A corrupted ASR file still fails as the recognizer, never as the diarizer.

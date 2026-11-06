@@ -188,6 +188,11 @@ impl Controller {
         |state| state.set_speaker_labels_resource(available)
     );
 
+    forward_update!(
+        set_active_asr_profile_resource(session_id: u32, profile: Option<&'static str>),
+        |state| state.set_active_asr_profile_resource(session_id, profile)
+    );
+
     forward_update!(start_session(), AppState::start);
     forward_update!(stop_session(), AppState::stop);
     forward_update!(

@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+  <title id="title">AnyCaptions — local captions for every sound</title>
+  <desc id="desc">AnyCaptions turns audio playing on a Windows PC into real-time captions and translation, entirely on-device. A dark glass caption console with a waveform and two caption cards sits beside the project name.</desc>
+  <defs>
+    <linearGradient id="hero-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#05070c"/>
+      <stop offset="1" stop-color="#0c1020"/>
+    </linearGradient>
+    <linearGradient id="caption-accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#60a5fa"/>
+      <stop offset="1" stop-color="#a78bfa"/>
+    </linearGradient>
+    <clipPath id="hero-clip"><rect width="1200" height="360" rx="28"/></clipPath>
+  </defs>
+
+  <rect width="1200" height="360" rx="28" fill="url(#hero-bg)"/>
+  <g clip-path="url(#hero-clip)">
+    <path d="M0 310H1200" stroke="#1e293b" stroke-width="1"/>
+    <path d="M610 0V360" stroke="#1e293b" stroke-width="1" stroke-dasharray="3 10"/>
+
+    <g transform="translate(56 50)" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif">
+      <text x="0" y="0" fill="#93c5fd" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="18" letter-spacing="2.2">WINDOWS • LOCAL • PRIVATE</text>
+      <text x="0" y="70" fill="#f8fafc" font-size="62" font-weight="700" letter-spacing="-1.6">AnyCaptions</text>
+      <text x="0" y="116" fill="#e2e8f0" font-size="28" font-weight="500">Real-time captions and translation</text>
+      <text x="0" y="151" fill="#e2e8f0" font-size="28" font-weight="500">for anything playing on your PC.</text>
+
+      <g transform="translate(0 190)">
+        <rect width="294" height="42" rx="21" fill="#172554" stroke="#3157a6" stroke-width="1"/>
+        <circle cx="22" cy="21" r="6" fill="#60a5fa"/>
+        <text x="40" y="28" fill="#bfdbfe" font-size="20" font-weight="500">Nothing leaves your machine</text>
+      </g>
+
+      <g transform="translate(0 266)" stroke="url(#caption-accent)" stroke-width="3" stroke-linecap="round" fill="none">
+        <path d="M0 0h28m10 0h20m10 0h10m10 0h20m10 0h10m10 0h28"/>
+        <path d="M0 10h14m10 0h24m10 0h14m10 0h18m10 0h16m10 0h20" opacity="0.45"/>
+      </g>
+      <text x="0" y="300" fill="#94a3b8" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17">WASAPI loopback → captions → translation</text>
+    </g>
+
+    <g transform="translate(696 18)">
+      <rect x="0" y="0" width="456" height="324" rx="24" fill="#0b1220" stroke="#263653" stroke-width="1"/>
+      <path d="M28 286H426" stroke="#3157a6" stroke-width="2" opacity="0.45"/>
+      <path d="M28 286H154" stroke="url(#caption-accent)" stroke-width="2"/>
+      <text x="28" y="312" fill="#7d93b5" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="15">ON-DEVICE SPEECH TO CAPTIONS</text>
+    </g>
+  </g>
+</svg>

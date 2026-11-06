@@ -35,7 +35,7 @@ use super::{
 };
 
 /// Trait for emitting dictation events to the UI.
-pub trait DictationEventSink: Send + Sync {
+pub trait DictationEventSink: crate::ipc::StateEvents + Send + Sync {
     fn emit(&self, payload: &DictationEventPayload);
 }
 
@@ -402,6 +402,17 @@ fn run_worker(state: &DictationState, session: u64, commands: mpsc::Receiver<Wor
             return;
         }
     };
+    if let Ok(session_id) = state
+        .controller
+        .snapshot()
+        .map(|snapshot| snapshot.session_id)
+    {
+        let _ = state.controller.set_active_asr_profile_resource(
+            session_id,
+            state.factory.active_asr_profile(),
+            state.events.as_ref(),
+        );
+    }
     let mut pipeline = Pipeline::default();
     let Ok(pipeline_id) = pipeline.start(processor) else {
         fail(state, session, "dictation-model");

@@ -1,0 +1,12 @@
+Model: gpt-image-2 via cheapvibecode
+
+One isolated project-specific desktop audio caption console for AnyCaptions: a compact dark glass computer display viewed at a three-quarter angle, with a luminous audio waveform on the left transforming into two clean floating translucent caption cards on the right. Deep charcoal glass, cobalt-blue edge light and a restrained violet accent, subtle depth and material detail, no people, no room, no desk, no text, no letters, no numbers, no logos, no watermark. The subject should read as local audio becoming live bilingual captions. Center-right composition with generous transparent padding.
+
+Action: A single waveform flows into two floating caption panels, suggesting live transcription and translation happening locally on the device.
+Scene: Isolated product-style cutout object on a perfectly flat solid #00ff00 chroma-key background. No floor, no reflection, no cast shadow, no gradient, no texture in background.
+Composition: Three-quarter product view, screen facing slightly left, enough empty space around the entire device and floating cards for clean cutout and later placement on the right side of a 1200x360 hero.
+Lighting: Soft studio rim light from upper left, cobalt and violet edge highlights, crisp glass edges, no bloom obscuring details.
+Style: Premium restrained 3D product illustration, realistic dark glass and metal, clean silhouette, no text, no letters, no logo, no watermark, no extra objects.
+Aspect ratio: 3:2, 1536x1024.
+
+Post-processing: generated raw image had a black background. Border-connected near-black pixels were removed, preserving the dark glass object. The resulting subject was cropped and saved as hero-subject.png.

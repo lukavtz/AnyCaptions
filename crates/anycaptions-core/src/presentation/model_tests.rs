@@ -42,6 +42,7 @@ fn snapshot(revision: u32) -> AppSnapshot {
             transcription: true,
             translation: true,
             speaker_labels: false,
+            active_asr_profile: None,
         },
         can_start: true,
         can_lock: false,
@@ -439,7 +440,16 @@ fn download_events_are_isolated_by_model_and_sizes_use_catalog_bytes() {
         downloading: false,
         total_bytes: 107_012_128,
     };
-    downloads.replace_models(vec![riva, diarization]);
+    let english = ModelDownloadState {
+        model: "english-asr",
+        kind: ModelKind::Asr,
+        engine: None,
+        installed: false,
+        downloadable: true,
+        downloading: false,
+        total_bytes: 699_872_960,
+    };
+    downloads.replace_models(vec![riva, diarization, english]);
     downloads.accept(DownloadUpdate {
         model: "diarization",
         phase: DownloadPhase::Downloading,
@@ -459,6 +469,12 @@ fn download_events_are_isolated_by_model_and_sizes_use_catalog_bytes() {
         .unwrap();
     assert_eq!(diarization_view.percent, 25);
     assert!(diarization_view.downloading);
+    let english_view = downloads
+        .view_for_model("english-asr", MessageKey::EnglishAsrModelMissing)
+        .unwrap();
+    assert_eq!(english_view.percent, 0);
+    assert_eq!(english_view.action_size.as_deref(), Some("700"));
+    assert_eq!(english_view.status_key, MessageKey::EnglishAsrModelMissing);
 }
 
 fn check(installable: bool) -> UpdateCheck {

@@ -40,7 +40,7 @@ pub struct DownloadView {
     pub action_size: Option<String>,
 }
 
-/// Shared catalog/event state used by both translation and diarization rows.
+/// Shared catalog/event state used by every model download row.
 #[derive(Default)]
 pub struct DownloadsModel {
     models: Vec<ModelDownloadState>,
@@ -110,6 +110,10 @@ impl DownloadsModel {
         missing_key: MessageKey,
     ) -> Option<DownloadView> {
         self.view_for(|entry| entry.engine == Some(engine), missing_key)
+    }
+
+    pub fn view_for_model(&self, model: &str, missing_key: MessageKey) -> Option<DownloadView> {
+        self.view_for(|entry| entry.model == model, missing_key)
     }
 
     pub fn view_for_kind(&self, kind: ModelKind, missing_key: MessageKey) -> Option<DownloadView> {

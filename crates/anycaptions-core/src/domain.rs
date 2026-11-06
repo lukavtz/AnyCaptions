@@ -458,6 +458,9 @@ pub struct Resources {
     /// The diarization model and its library are usable. Never a start
     /// requirement: captions keep flowing without labels when it is missing.
     pub speaker_labels: bool,
+    /// Catalog ID of the profile opened by the latest recognizer creation.
+    #[serde(default)]
+    pub active_asr_profile: Option<&'static str>,
 }
 
 impl Resources {
@@ -670,6 +673,22 @@ impl AppState {
         self.set_resources(resources)
     }
 
+    /// Records the ASR profile the recognizer factory actually opened.
+    pub fn set_active_asr_profile_resource(
+        &mut self,
+        session_id: u32,
+        profile: Option<&'static str>,
+    ) -> Result<(), DomainError> {
+        if session_id != self.session_id {
+            return Err(DomainError::InvalidTransition);
+        }
+        let resources = Resources {
+            active_asr_profile: profile,
+            ..self.resources
+        };
+        self.set_resources(resources)
+    }
+
     /// Turns the startup update check on or off; captions are unaffected.
     pub fn set_update_check(&mut self, enabled: bool) -> Result<(), DomainError> {
         if enabled != self.update_check {
@@ -799,6 +818,7 @@ mod tests {
                 transcription: true,
                 translation: true,
                 speaker_labels: false,
+                active_asr_profile: None,
             },
             ..AppState::default()
         }

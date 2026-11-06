@@ -41,6 +41,8 @@ pub struct ModelProfile {
     pub source: &'static str,
     pub license: &'static str,
     pub sha256: &'static str,
+    /// Exact artifact size when the publisher pins one; always enforced for ASR.
+    pub size_bytes: Option<u64>,
     pub max_bytes: u64,
 }
 
@@ -53,9 +55,10 @@ impl ModelProfile {
             .join(self.filename)
     }
 
-    /// Checks that the file at `path` exists, stays within `max_bytes` and matches `sha256`.
+    /// Checks that the file at `path` exists, has the pinned size when known,
+    /// stays within `max_bytes` and matches `sha256`.
     pub fn verify(&self, path: &Path) -> Result<(), ModelProfileError> {
-        verify::verify_model_file(path, self.sha256, self.max_bytes)
+        verify::verify_model_file(path, self.sha256, self.size_bytes, self.max_bytes)
     }
 }
 
@@ -98,14 +101,29 @@ mod tests {
     fn catalog_profiles_carry_complete_integrity_data() {
         for profile in [
             &catalog::NEMOTRON_STREAMING_Q8,
+            &catalog::NEMOTRON_STREAMING_EN_Q8,
             &catalog::NEMOTRON_3_DIARIZATION_Q8,
             &catalog::RIVA_TRANSLATE_Q4,
         ] {
             assert_eq!(profile.sha256.len(), 64);
             assert!(profile.sha256.bytes().all(|b| b.is_ascii_hexdigit()));
             assert!(profile.max_bytes > 0);
+            assert!(profile.size_bytes.is_some_and(|bytes| bytes > 0));
             assert!(!profile.revision.is_empty());
         }
+    }
+
+    #[test]
+    fn english_asr_profile_pins_the_candidate_artifact() {
+        let profile = &catalog::NEMOTRON_STREAMING_EN_Q8;
+        assert_eq!(profile.kind, ModelKind::Asr);
+        assert_eq!(profile.revision, "ebe59e5a817142986528bbbee5dba8db7b38ed50");
+        assert_eq!(profile.size_bytes, Some(699_872_960));
+        assert_eq!(
+            profile.sha256,
+            "d9a01898d2a611c8764e23a1c2f45e70bbd5a425dc4de93692ac951dd603812d"
+        );
+        assert_eq!(profile.license, "NVIDIA Open Model License");
     }
 
     #[test]

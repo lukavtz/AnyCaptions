@@ -14,7 +14,10 @@ use anycaptions_core::{
     },
     preferences::{PreferenceStore, SavedGeometry},
     presentation::{application::Action, downloads::ModelDownloadState},
-    transcription::session::{CaptionSessionManager, SessionSink},
+    transcription::{
+        nemotron::NemotronPaths,
+        session::{CaptionSessionManager, SessionSink},
+    },
     updater::{self, UpdateInstaller},
 };
 use async_channel::Sender;
@@ -273,6 +276,17 @@ impl Services {
                 downloading: self.downloads.active_model()
                     == Some(catalog::NEMOTRON_3_DIARIZATION_Q8.id),
                 total_bytes: download::DIARIZATION_DOWNLOAD_BYTES,
+            },
+            ModelDownloadState {
+                model: catalog::NEMOTRON_STREAMING_EN_Q8.id,
+                kind: catalog::NEMOTRON_STREAMING_EN_Q8.kind,
+                engine: None,
+                installed: NemotronPaths::for_profile(&catalog::NEMOTRON_STREAMING_EN_Q8)
+                    .transcription_available(),
+                downloadable: download::source_configured(catalog::NEMOTRON_STREAMING_EN_Q8.id),
+                downloading: self.downloads.active_model()
+                    == Some(catalog::NEMOTRON_STREAMING_EN_Q8.id),
+                total_bytes: download::ENGLISH_ASR_DOWNLOAD_BYTES,
             },
         ]
     }

@@ -25,7 +25,7 @@ use anycaptions_core::{
     ipc::{CaptionUpdate, CommandError, Controller, ShortcutRegistry},
     models::{
         catalog,
-        download::{DownloadFailure, DownloadPhase, DownloadUpdate},
+        download::{self, DownloadFailure, DownloadPhase, DownloadUpdate},
     },
     pipeline::AudioProcessor,
     preferences::{PreferenceStore, SavedGeometry, config_path},
@@ -504,16 +504,18 @@ fn download_catalog_keeps_real_model_ids_and_gate_inputs() {
                 transcription: true,
                 translation: false,
                 speaker_labels: false,
+                active_asr_profile: None,
             },
             fixture.sink.as_ref(),
         )
         .unwrap();
     let models = fixture.services.model_downloads();
-    assert_eq!(models.len(), 2);
+    assert_eq!(models.len(), 3);
     assert_eq!(models[0].model, catalog::RIVA_TRANSLATE_Q4.id);
     assert_eq!(models[1].model, catalog::NEMOTRON_3_DIARIZATION_Q8.id);
-    assert!(!models[0].downloading);
-    assert!(!models[1].downloading);
+    assert_eq!(models[2].model, catalog::NEMOTRON_STREAMING_EN_Q8.id);
+    assert_eq!(models[2].total_bytes, download::ENGLISH_ASR_DOWNLOAD_BYTES);
+    assert!(models.iter().all(|model| !model.downloading));
 }
 
 #[gpui::test]
@@ -529,6 +531,7 @@ fn settings_open_uses_authoritative_snapshot_after_overlay_race(cx: &mut TestApp
                 transcription: true,
                 translation: true,
                 speaker_labels: true,
+                active_asr_profile: None,
             })?;
             state.set_ui_language(UiLanguage::from_tag("pt-br").unwrap())
         })

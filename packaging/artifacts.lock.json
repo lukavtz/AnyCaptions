@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "minisignPublicKey": "RWTcbjUZlwuKjzVjLhU49QKNIuIxHQ+8lu4VoAvJZgwDho+Mqf48H8Ap",
+  "minisignPublicKey": "RWTmeZEz4/wzPLQqoJTKc/pRoLj1xXticiQjoksBhDRR6FZO+ZMGmevY",
   "runtime": {
     "directory": "backend/local-data/nemo-speech/build-vulkan-asr/bin",
     "expectedDllCount": 17,

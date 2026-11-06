@@ -1,6 +1,6 @@
 use std::{
     sync::{
-        Arc, Mutex,
+        Arc, Mutex, Weak,
         atomic::{AtomicBool, Ordering},
         mpsc,
     },
@@ -21,7 +21,8 @@ use crate::{
     },
     ipc::{CaptionUpdate, CommandError, Controller, StateEvents},
     models::{
-        catalog::{NEMOTRON_3_DIARIZATION_Q8, NEMOTRON_STREAMING_Q8},
+        ModelProfile,
+        catalog::{NEMOTRON_3_DIARIZATION_Q8, NEMOTRON_STREAMING_EN_Q8, NEMOTRON_STREAMING_Q8},
         models_root,
     },
     pipeline::{AudioProcessor, Cancellation, MAX_BLOCK_SAMPLES, Pipeline},
@@ -47,17 +48,22 @@ impl NemotronPaths {
     /// Model: the catalog layout under the models root (see `crate::models::models_root`).
     /// Library: the shared NeMo-Speech folder (see `crate::native::nemo_library_dir`).
     pub fn resolve() -> Self {
+        Self::for_profile(&NEMOTRON_STREAMING_Q8)
+    }
+
+    pub fn for_profile(profile: &'static ModelProfile) -> Self {
         let root = models_root();
         Self {
             library_dir: crate::native::nemo_library_dir(),
-            model: NEMOTRON_STREAMING_Q8.path_in(&root),
+            model: profile.path_in(&root),
             diarization: NEMOTRON_3_DIARIZATION_Q8.path_in(&root),
+            profile,
         }
     }
 
     pub fn transcription_available(&self) -> bool {
         self.library_dir.join(LIBRARY_FILENAME).is_file()
-            && NEMOTRON_STREAMING_Q8.verify(&self.model).is_ok()
+            && self.profile.verify(&self.model).is_ok()
     }
 
     /// The diarization GGUF is installed and intact (the sidecar lives in the
@@ -74,6 +80,10 @@ pub trait SessionSink: StateEvents + Send + Sync + 'static {
 
 pub trait ProcessorFactory: Send + Sync {
     fn is_available(&self) -> bool;
+    /// Profile selected by the most recent successful recognizer creation.
+    fn active_asr_profile(&self) -> Option<&'static str> {
+        None
+    }
     /// Whether speaker labels can be produced right now: the diarization model
     /// is installed and did not fail to load in this run. Checked again after
     /// each `create`, since loading is when the sidecar can still fail.
@@ -114,18 +124,118 @@ pub trait ProcessorFactory: Send + Sync {
     }
 }
 
+fn select_asr_profile(
+    source_language: Option<&str>,
+    english_installed: bool,
+) -> &'static ModelProfile {
+    if english_installed && matches!(source_language, Some("en-US" | "en-GB")) {
+        &NEMOTRON_STREAMING_EN_Q8
+    } else {
+        &NEMOTRON_STREAMING_Q8
+    }
+}
+
+enum CachedAsrModel<T> {
+    Active(Arc<T>),
+    Inactive(Weak<T>),
+}
+
+struct AsrCacheEntry<T> {
+    profile: &'static ModelProfile,
+    right_context: Option<i32>,
+    model: CachedAsrModel<T>,
+}
+
+/// Only the selected profile owns strong cache references. An inactive profile
+/// stays available while a stream uses it, then drops with that last stream.
+struct AsrModelCache<T> {
+    entries: Vec<AsrCacheEntry<T>>,
+    active_profile: Option<&'static ModelProfile>,
+}
+
+impl<T> Default for AsrModelCache<T> {
+    fn default() -> Self {
+        Self {
+            entries: Vec::new(),
+            active_profile: None,
+        }
+    }
+}
+
+impl<T> AsrModelCache<T> {
+    fn get(
+        &mut self,
+        profile: &'static ModelProfile,
+        right_context: Option<i32>,
+    ) -> Option<Arc<T>> {
+        let index = self.entries.iter().position(|entry| {
+            entry.profile.id == profile.id && entry.right_context == right_context
+        })?;
+        let model = match &self.entries[index].model {
+            CachedAsrModel::Active(model) => Some(Arc::clone(model)),
+            CachedAsrModel::Inactive(model) => model.upgrade(),
+        };
+        if model.is_none() {
+            self.entries.remove(index);
+        }
+        model
+    }
+
+    fn activate(&mut self, profile: &'static ModelProfile) {
+        for entry in &mut self.entries {
+            let replacement = if entry.profile.id == profile.id {
+                match &entry.model {
+                    CachedAsrModel::Inactive(model) => model.upgrade().map(CachedAsrModel::Active),
+                    CachedAsrModel::Active(_) => None,
+                }
+            } else {
+                match &entry.model {
+                    CachedAsrModel::Active(model) => {
+                        Some(CachedAsrModel::Inactive(Arc::downgrade(model)))
+                    }
+                    CachedAsrModel::Inactive(_) => None,
+                }
+            };
+            if let Some(replacement) = replacement {
+                entry.model = replacement;
+            }
+        }
+        self.entries.retain(|entry| match &entry.model {
+            CachedAsrModel::Active(_) => true,
+            CachedAsrModel::Inactive(model) => model.strong_count() > 0,
+        });
+        self.active_profile = Some(profile);
+    }
+
+    fn insert(
+        &mut self,
+        profile: &'static ModelProfile,
+        right_context: Option<i32>,
+        model: Arc<T>,
+    ) {
+        self.activate(profile);
+        self.entries
+            .retain(|entry| entry.profile.id != profile.id || entry.right_context != right_context);
+        self.entries.push(AsrCacheEntry {
+            profile,
+            right_context,
+            model: CachedAsrModel::Active(model),
+        });
+    }
+
+    fn active_profile_id(&self) -> Option<&'static str> {
+        self.active_profile.map(|profile| profile.id)
+    }
+}
+
 pub struct NativeProcessorFactory {
     paths: NemotronPaths,
     riva: RivaPaths,
     opus: OpusPaths,
-    // Loaded once on first use and reused by every later session: reloading per
-    // session cost seconds on each language switch and accumulated leaked GPU
-    // memory in the native library until allocations failed. The ASR cache is
-    // keyed by the right-context preset, because that is chosen at model load
-    // and the modes use different values. A recognizer loaded with the
-    // diarizer also serves sessions without labels (tags are per stream), so
-    // the ASR weights are never held twice for one preset.
-    asr_models: Mutex<Vec<(Option<i32>, Arc<NemotronModel>)>>,
+    // Loaded once per profile/right-context preset and reused by later sessions.
+    // Inactive profiles become weak entries so their last session releases them.
+    // A recognizer with the diarizer also serves streams without labels.
+    asr_models: Mutex<AsrModelCache<NemotronModel>>,
     // Set when the diarizer failed to load in this run (bad file, no memory):
     // later sessions stop retrying and the UI reports labels as unavailable.
     diarization_failed: AtomicBool,
@@ -139,20 +249,19 @@ impl NativeProcessorFactory {
             paths,
             riva,
             opus,
-            asr_models: Mutex::new(Vec::new()),
+            asr_models: Mutex::new(AsrModelCache::default()),
             diarization_failed: AtomicBool::new(false),
             opus_translator: Mutex::new(None),
             riva_translator: Mutex::new(None),
         }
     }
 
-    /// The cached recognizer for `rnnt_right_context`. With `diarization`, a
-    /// cached recognizer that lacks the sidecar is replaced by one carrying it
-    /// (the old one is released once its last session ends); when the sidecar
-    /// fails to load, the plain recognizer is kept or loaded instead and
-    /// `diarization_failed` is set, so captions never stop over missing labels.
+    /// The cached recognizer for one profile and right-context preset. With
+    /// `diarization`, a cached recognizer without the sidecar is replaced; when
+    /// that load fails, the plain recognizer still serves captions.
     fn asr_model(
         &self,
+        profile: &'static ModelProfile,
         rnnt_right_context: Option<i32>,
         diarization: bool,
     ) -> Result<Arc<NemotronModel>, DomainError> {
@@ -160,39 +269,35 @@ impl NativeProcessorFactory {
             .asr_models
             .lock()
             .map_err(|_| DomainError::TranscriptionUnavailable)?;
-        let existing = cached
-            .iter()
-            .position(|(context, _)| *context == rnnt_right_context);
-        if let Some(index) = existing {
-            let model = &cached[index].1;
-            if model.has_diarization() || !diarization {
-                return Ok(Arc::clone(model));
-            }
+        let existing = cached.get(profile, rnnt_right_context);
+        if let Some(model) = existing.as_ref()
+            && (model.has_diarization() || !diarization)
+        {
+            cached.activate(profile);
+            return Ok(Arc::clone(model));
         }
+        let paths = NemotronPaths::for_profile(profile);
         if diarization {
-            match NemotronModel::load(&self.paths, rnnt_right_context, true) {
+            match NemotronModel::load(&paths, rnnt_right_context, true) {
                 Ok(model) => {
-                    if let Some(index) = existing {
-                        cached.remove(index);
-                    }
-                    cached.push((rnnt_right_context, Arc::clone(&model)));
+                    cached.insert(profile, rnnt_right_context, Arc::clone(&model));
                     return Ok(model);
                 }
                 Err(_) => {
-                    // Explicit, like the CPU fallback: the user asked for labels.
                     eprintln!(
                         "[diar] diarizer unavailable, captions continue without speaker labels"
                     );
                     self.diarization_failed.store(true, Ordering::Release);
-                    if let Some(index) = existing {
-                        return Ok(Arc::clone(&cached[index].1));
+                    if let Some(model) = existing {
+                        cached.activate(profile);
+                        return Ok(model);
                     }
                 }
             }
         }
-        let model = NemotronModel::load(&self.paths, rnnt_right_context, false)
+        let model = NemotronModel::load(&paths, rnnt_right_context, false)
             .map_err(|_| DomainError::TranscriptionUnavailable)?;
-        cached.push((rnnt_right_context, Arc::clone(&model)));
+        cached.insert(profile, rnnt_right_context, Arc::clone(&model));
         Ok(model)
     }
 
@@ -206,7 +311,10 @@ impl NativeProcessorFactory {
         labels: bool,
         tuning: super::tuning::RecognizerTuning,
     ) -> Result<Box<dyn AudioProcessor<Output = Vec<CaptionUpdate>>>, DomainError> {
-        let model = self.asr_model(tuning.rnnt_right_context, labels)?;
+        let english_installed = matches!(source_language, Some("en-US" | "en-GB"))
+            && NemotronPaths::for_profile(&NEMOTRON_STREAMING_EN_Q8).transcription_available();
+        let profile = select_asr_profile(source_language, english_installed);
+        let model = self.asr_model(profile, tuning.rnnt_right_context, labels)?;
         // The model may have come back without the diarizer (load failure):
         // the stream then runs plain, and the UI learns it from availability.
         let labels = labels && model.has_diarization();
@@ -278,6 +386,13 @@ impl ProcessorFactory for NativeProcessorFactory {
         self.paths.transcription_available()
     }
 
+    fn active_asr_profile(&self) -> Option<&'static str> {
+        self.asr_models
+            .lock()
+            .ok()
+            .and_then(|cache| cache.active_profile_id())
+    }
+
     fn speaker_labels_available(&self) -> bool {
         self.paths.diarization_available() && !self.diarization_failed.load(Ordering::Acquire)
     }
@@ -290,8 +405,8 @@ impl ProcessorFactory for NativeProcessorFactory {
         speaker_labels: bool,
     ) -> Result<Box<dyn AudioProcessor<Output = Vec<CaptionUpdate>>>, DomainError> {
         let labels = speaker_labels && self.speaker_labels_available();
-        // Translate mode closes finals sooner than transcription; both share
-        // the Auto model.
+        // Translate mode closes finals sooner than transcription; both use
+        // the profile selected once for this session.
         let tuning = super::tuning::for_session(mode.requires_translation(), labels);
         self.open_processor(session_id, mode, source_language, labels, tuning)
     }
@@ -402,6 +517,7 @@ impl CaptionSessionManager {
             transcription,
             translation: self.factory.translation_available(engine),
             speaker_labels: self.factory.speaker_labels_available(),
+            active_asr_profile: self.factory.active_asr_profile(),
         }
     }
 
@@ -650,6 +766,12 @@ fn run_coordinator(
             return;
         }
     };
+    // The factory reports the model it actually opened; the UI never infers it.
+    let _ = controller.set_active_asr_profile_resource(
+        session_id,
+        factory.active_asr_profile(),
+        sink.as_ref(),
+    );
     // Loading is when the diarizer can still fail; tell the overlay whether
     // this session will actually carry labels (never fatal for captions).
     if speaker_labels {
@@ -881,6 +1003,76 @@ mod tests {
         time::Instant,
     };
 
+    #[test]
+    fn english_profile_requires_an_explicit_english_source_and_installed_model() {
+        use crate::models::catalog::{NEMOTRON_STREAMING_EN_Q8, NEMOTRON_STREAMING_Q8};
+
+        for source in [Some("en-US"), Some("en-GB")] {
+            assert_eq!(
+                select_asr_profile(source, true).id,
+                NEMOTRON_STREAMING_EN_Q8.id
+            );
+            assert_eq!(
+                select_asr_profile(source, false).id,
+                NEMOTRON_STREAMING_Q8.id
+            );
+        }
+        for source in [None, Some("en"), Some("pt-BR"), Some("fr"), Some("es-ES")] {
+            assert_eq!(
+                select_asr_profile(source, true).id,
+                NEMOTRON_STREAMING_Q8.id
+            );
+        }
+    }
+
+    #[test]
+    fn asr_cache_separates_profile_and_right_context() {
+        use crate::models::catalog::{NEMOTRON_STREAMING_EN_Q8, NEMOTRON_STREAMING_Q8};
+
+        let mut cache = AsrModelCache::default();
+        let multilingual = Arc::new("multilingual-default");
+        let multilingual_context = Arc::new("multilingual-context");
+        let english = Arc::new("english-default");
+        cache.insert(&NEMOTRON_STREAMING_Q8, None, Arc::clone(&multilingual));
+        cache.insert(
+            &NEMOTRON_STREAMING_Q8,
+            Some(4),
+            Arc::clone(&multilingual_context),
+        );
+        cache.insert(&NEMOTRON_STREAMING_EN_Q8, None, Arc::clone(&english));
+
+        assert_eq!(
+            *cache.get(&NEMOTRON_STREAMING_Q8, None).unwrap(),
+            "multilingual-default"
+        );
+        assert_eq!(
+            *cache.get(&NEMOTRON_STREAMING_Q8, Some(4)).unwrap(),
+            "multilingual-context"
+        );
+        assert_eq!(
+            *cache.get(&NEMOTRON_STREAMING_EN_Q8, None).unwrap(),
+            "english-default"
+        );
+        assert!(cache.get(&NEMOTRON_STREAMING_EN_Q8, Some(4)).is_none());
+    }
+
+    #[test]
+    fn inactive_profile_is_released_after_its_last_session() {
+        use crate::models::catalog::{NEMOTRON_STREAMING_EN_Q8, NEMOTRON_STREAMING_Q8};
+
+        let mut cache = AsrModelCache::default();
+        let multilingual = Arc::new("multilingual");
+        let multilingual_weak = Arc::downgrade(&multilingual);
+        cache.insert(&NEMOTRON_STREAMING_Q8, None, Arc::clone(&multilingual));
+        let live_session = cache.get(&NEMOTRON_STREAMING_Q8, None).unwrap();
+        cache.insert(&NEMOTRON_STREAMING_EN_Q8, None, Arc::new("english"));
+        drop(multilingual);
+        assert!(multilingual_weak.upgrade().is_some());
+        drop(live_session);
+        assert!(multilingual_weak.upgrade().is_none());
+        assert_eq!(cache.active_profile_id(), Some(NEMOTRON_STREAMING_EN_Q8.id));
+    }
+
     #[derive(Default)]
     struct RecordedSink {
         states: Mutex<Vec<AppSnapshot>>,
@@ -906,6 +1098,10 @@ mod tests {
     impl ProcessorFactory for FakeFactory {
         fn is_available(&self) -> bool {
             true
+        }
+
+        fn active_asr_profile(&self) -> Option<&'static str> {
+            Some(NEMOTRON_STREAMING_Q8.id)
         }
 
         fn create(
@@ -996,6 +1192,7 @@ mod tests {
                     transcription: true,
                     translation,
                     speaker_labels: false,
+                    active_asr_profile: None,
                 },
                 sink,
             )
@@ -1062,9 +1259,11 @@ mod tests {
         assert_eq!(captions[0].session_id, started.session_id);
         assert_eq!(captions[0].text, "Live English caption");
         assert!(captions[0].is_final);
+        let snapshot = controller.snapshot().unwrap();
+        assert_eq!(snapshot.capture, CaptureState::Stopped);
         assert_eq!(
-            controller.snapshot().unwrap().capture,
-            CaptureState::Stopped
+            snapshot.resources.active_asr_profile,
+            Some(NEMOTRON_STREAMING_Q8.id)
         );
     }
 

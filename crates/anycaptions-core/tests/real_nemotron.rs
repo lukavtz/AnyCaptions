@@ -1,9 +1,12 @@
 use std::{path::PathBuf, time::Instant};
 
-use anycaptions_core::transcription::{
-    nemotron::{NativeNemotron, NemotronModel, NemotronPaths},
-    streaming::{SpeechResult, StreamingRecognizer},
-    tuning::{TRANSCRIPTION, TRANSLATION},
+use anycaptions_core::{
+    models::catalog::NEMOTRON_STREAMING_EN_Q8,
+    transcription::{
+        nemotron::{NativeNemotron, NemotronModel, NemotronPaths},
+        streaming::{SpeechResult, StreamingRecognizer},
+        tuning::{TRANSCRIPTION, TRANSLATION},
+    },
 };
 
 // Same block size the capture coordinator submits (128 ms at 16 kHz).
@@ -22,6 +25,13 @@ fn load_wav_16k_mono(path: &PathBuf) -> Vec<f32> {
 fn jfk_samples() -> Vec<f32> {
     load_wav_16k_mono(
         &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../backend/benchmarks/local/jfk.wav"),
+    )
+}
+
+fn ami_samples() -> Vec<f32> {
+    load_wav_16k_mono(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../backend/benchmarks/local/ami_en2002d_2132.wav"),
     )
 }
 
@@ -164,5 +174,87 @@ fn forcing_a_language_keeps_matches_and_filters_other_speech() {
     assert!(
         filtered.trim().is_empty() || filtered.contains("ask not what your country can do for you"),
         "{filtered}"
+    );
+}
+
+#[test]
+#[ignore = "requires both Nemotron ASR GGUFs, the NeMo-Speech.cpp build and jfk.wav"]
+fn english_profile_matches_multilingual_baseline_with_forced_english() {
+    let jfk = jfk_samples();
+    let load = Instant::now();
+    let mut baseline = NativeNemotron::load(
+        &NemotronPaths::resolve(),
+        Some("en-US"),
+        TRANSCRIPTION,
+        false,
+    )
+    .expect("multilingual model");
+    let baseline_load_ms = load.elapsed().as_millis();
+    let decode = Instant::now();
+    let baseline_results = stream(&mut baseline, &jfk);
+    let baseline_decode_ms = decode.elapsed().as_millis();
+    let baseline_text = final_text(&baseline_results);
+    assert!(baseline_text.contains("ask not what your country can do for you"));
+    drop(baseline);
+
+    let paths = NemotronPaths::for_profile(&NEMOTRON_STREAMING_EN_Q8);
+    let load = Instant::now();
+    let model = NemotronModel::load(&paths, TRANSCRIPTION.rnnt_right_context, false)
+        .expect("English model");
+    let english_load_ms = load.elapsed().as_millis();
+    assert_eq!(model.profile_id(), NEMOTRON_STREAMING_EN_Q8.id);
+    let mut english = NativeNemotron::open(model, Some("en-US"), TRANSCRIPTION, false)
+        .expect("forced English stream");
+    let decode = Instant::now();
+    let results = stream(&mut english, &jfk);
+    let english_decode_ms = decode.elapsed().as_millis();
+    let text = final_text(&results);
+    eprintln!(
+        "[nemotron-ab] multilingual: load_ms={baseline_load_ms} decode_ms={baseline_decode_ms} text={baseline_text:?} | english: load_ms={english_load_ms} decode_ms={english_decode_ms} text={text:?}"
+    );
+    assert!(
+        text.contains("ask not what your country can do for you"),
+        "{text}"
+    );
+    assert!(results.iter().any(|result| !result.is_final));
+    assert!(results.iter().any(|result| result.is_final));
+    assert!(
+        results
+            .iter()
+            .filter(|result| result.is_final)
+            .all(|result| {
+                result
+                    .language
+                    .as_deref()
+                    .is_none_or(|code| code.starts_with("en"))
+            })
+    );
+}
+
+#[test]
+#[ignore = "requires English ASR and diarization GGUFs, the NeMo-Speech.cpp build and AMI audio"]
+fn english_profile_preserves_interim_final_and_diarization_results() {
+    let paths = NemotronPaths::for_profile(&NEMOTRON_STREAMING_EN_Q8);
+    assert!(paths.diarization_available());
+    let model = NemotronModel::load(&paths, TRANSCRIPTION.rnnt_right_context, true)
+        .expect("English ASR + diarizer");
+    let mut recognizer = NativeNemotron::open(model, Some("en-US"), TRANSCRIPTION, true)
+        .expect("forced English diarizing stream");
+    let results = stream(&mut recognizer, &ami_samples());
+
+    assert!(results.iter().any(|result| !result.is_final));
+    let finals: Vec<_> = results.iter().filter(|result| result.is_final).collect();
+    assert!(finals.iter().any(|result| !result.text.trim().is_empty()));
+    assert!(
+        finals
+            .iter()
+            .flat_map(|result| &result.words)
+            .any(|word| word.speaker > 0)
+    );
+    assert!(
+        results
+            .iter()
+            .filter(|result| !result.is_final)
+            .any(|result| { result.words.iter().any(|word| word.speaker > 0) })
     );
 }

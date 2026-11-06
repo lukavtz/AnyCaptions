@@ -113,6 +113,7 @@ fn snapshot(mode: CaptionMode, capture: CaptureState) -> AppSnapshot {
                 transcription: true,
                 translation: true,
                 speaker_labels: true,
+                active_asr_profile: None,
             },
             &NoopEvents,
         )

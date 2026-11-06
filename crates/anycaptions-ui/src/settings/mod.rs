@@ -532,6 +532,7 @@ impl Render for SettingsView {
             )
             .child(appearance::render(self, cx))
             .child(languages::render(self, cx))
+            .child(models::render_download(self, DownloadRow::EnglishAsr))
             .child(models::render_download(self, DownloadRow::Translation))
             .child(languages::render_speaker(self, cx))
             .child(models::render_download(self, DownloadRow::Diarization))

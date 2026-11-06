@@ -14,6 +14,7 @@ pub const RIVA_TRANSLATE_Q4: ModelProfile = ModelProfile {
     // from the q8_0 conversion of the revision above. Regenerate straight from
     // the checkpoint before distributing.
     sha256: "decbb4d3b12f756cc384833fceeac10bf7699cd2286dc3e18a746af9c8df71af",
+    size_bytes: Some(2_759_302_368),
     max_bytes: 5 * 1024 * 1024 * 1024,
 };
 
@@ -33,6 +34,7 @@ pub const OPUS_MT_EN_PT: ModelProfile = ModelProfile {
     source: "https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-en-pt",
     license: "CC-BY-4.0",
     sha256: "5c2b607d9f0c00e935a00a497aa4c523225288697fbca57ddb7f9ee96fe80006",
+    size_bytes: None,
     max_bytes: 512 * 1024 * 1024,
 };
 
@@ -45,6 +47,7 @@ pub const OPUS_MT_PT_EN: ModelProfile = ModelProfile {
     source: "https://huggingface.co/Helsinki-NLP/opus-mt-tc-bible-big-roa-en",
     license: "CC-BY-4.0",
     sha256: "b52ae8251ae34d6c8fd7bcc3d5202d6810ec6a8c005b89d762420f89d2f55fb2",
+    size_bytes: None,
     max_bytes: 512 * 1024 * 1024,
 };
 
@@ -63,6 +66,7 @@ pub const NEMOTRON_3_DIARIZATION_Q8: ModelProfile = ModelProfile {
     source: "https://huggingface.co/nvidia/Nemotron-3-Diarization",
     license: "OpenMDW-1.1",
     sha256: "08456d9e22cd9a323c0364d98375f3746d6e68507ebb705cd46438c534c7a3a1",
+    size_bytes: Some(107_012_128),
     max_bytes: 256 * 1024 * 1024,
 };
 
@@ -75,5 +79,20 @@ pub const NEMOTRON_STREAMING_Q8: ModelProfile = ModelProfile {
     source: "https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b",
     license: "OpenMDW-1.1",
     sha256: "3fc991d3badad7277c11030a7519832cddaf2057aafed6d4b25147e953a070b1",
+    size_bytes: Some(742_090_464),
+    max_bytes: 1024 * 1024 * 1024,
+};
+
+/// Optional English-only streaming ASR, downloaded separately on demand.
+pub const NEMOTRON_STREAMING_EN_Q8: ModelProfile = ModelProfile {
+    kind: ModelKind::Asr,
+    id: "nemotron-speech-streaming-en-0.6b-q8_0",
+    directory: "nemotron-speech-streaming-en-0.6b",
+    filename: "nemotron-speech-streaming-en-0.6b.q8_0.gguf",
+    revision: "ebe59e5a817142986528bbbee5dba8db7b38ed50",
+    source: "https://huggingface.co/nvidia/nemotron-speech-streaming-en-0.6b",
+    license: "NVIDIA Open Model License",
+    sha256: "d9a01898d2a611c8764e23a1c2f45e70bbd5a425dc4de93692ac951dd603812d",
+    size_bytes: Some(699_872_960),
     max_bytes: 1024 * 1024 * 1024,
 };

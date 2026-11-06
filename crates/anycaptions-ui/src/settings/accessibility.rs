@@ -33,6 +33,7 @@ pub(crate) struct SettingsAccessibility {
     window: AnyWindowHandle,
     color: UiaFragment,
     menu: Option<MenuNodes>,
+    english_asr_progress: Option<UiaFragment>,
     translation_progress: Option<UiaFragment>,
     diarization_progress: Option<UiaFragment>,
     update_progress: Option<UiaFragment>,
@@ -108,6 +109,7 @@ impl SettingsAccessibility {
             window: window_handle,
             color,
             menu: None,
+            english_asr_progress: None,
             translation_progress: None,
             diarization_progress: None,
             update_progress: None,
@@ -221,6 +223,11 @@ impl SettingsAccessibility {
 
     fn sync_progress(&mut self, view: &SettingsView) -> gpui::Result<()> {
         for (row, slot, id) in [
+            (
+                DownloadRow::EnglishAsr,
+                &mut self.english_asr_progress,
+                "english-asr-progress",
+            ),
             (
                 DownloadRow::Translation,
                 &mut self.translation_progress,

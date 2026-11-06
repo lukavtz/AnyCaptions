@@ -40,6 +40,8 @@ Function .onInit
     SetRegView 64
     SetShellVarContext current
     ; Tauri stores its install location in this key's default value.
+    StrCmp $INSTDIR "$LOCALAPPDATA\AnyCaptions" use_fallback_install_dir
+    Goto install_dir_ready
     ReadRegStr $0 HKCU "Software\EduardoViniciusJ\AnyCaptions" ""
     IfErrors use_fallback_install_dir
     StrCmp $0 "" use_fallback_install_dir

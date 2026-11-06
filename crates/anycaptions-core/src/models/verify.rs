@@ -11,22 +11,23 @@ use std::{
 use sha2::{Digest, Sha256};
 
 // A few model files may be checked per run; each entry avoids rehashing an unchanged file.
-const VERIFIED_CACHE_ENTRIES: usize = 4;
+const VERIFIED_CACHE_ENTRIES: usize = 6;
 
 type VerifiedFile = (PathBuf, u64, Option<SystemTime>, &'static str);
 static VERIFIED_FILES: Mutex<Vec<VerifiedFile>> = Mutex::new(Vec::new());
 
-/// Checks that `path` exists, is at most `max_bytes` and matches `sha256`. Results are cached
-/// by path, size and modification time, so unchanged files are hashed once per run.
+/// Checks that `path` exists, matches an optional exact size, is at most
+/// `max_bytes` and matches `sha256`. Unchanged files are hashed once per run.
 pub fn verify_model_file(
     path: &Path,
     sha256: &'static str,
+    size_bytes: Option<u64>,
     max_bytes: u64,
 ) -> Result<(), ModelProfileError> {
     let file = File::open(path).map_err(|_| ModelProfileError::Missing)?;
     let metadata = file.metadata().map_err(|_| ModelProfileError::Corrupted)?;
     let len = metadata.len();
-    if len == 0 || len > max_bytes {
+    if len == 0 || len > max_bytes || size_bytes.is_some_and(|expected| len != expected) {
         return Err(ModelProfileError::Corrupted);
     }
     let entry = (path.to_path_buf(), len, metadata.modified().ok(), sha256);
@@ -86,7 +87,10 @@ mod tests {
             std::process::id()
         ));
         std::fs::write(&path, b"model").unwrap();
-        assert_eq!(verify_model_file(&path, MODEL_SHA256, 1024), Ok(()));
+        assert_eq!(
+            verify_model_file(&path, MODEL_SHA256, Some(5), 1024),
+            Ok(())
+        );
         let _ = std::fs::remove_file(path);
     }
 
@@ -94,7 +98,7 @@ mod tests {
     fn detects_missing_oversized_and_corrupted_model_files() {
         let missing = std::env::temp_dir().join("anycaptions-missing-model.bin");
         assert_eq!(
-            verify_model_file(&missing, MODEL_SHA256, 1024),
+            verify_model_file(&missing, MODEL_SHA256, None, 1024),
             Err(ModelProfileError::Missing)
         );
 
@@ -104,11 +108,16 @@ mod tests {
         ));
         std::fs::write(&path, b"invalid-weights").unwrap();
         assert_eq!(
-            verify_model_file(&path, MODEL_SHA256, 1024),
+            verify_model_file(&path, MODEL_SHA256, None, 1024),
             Err(ModelProfileError::Corrupted)
         );
         assert_eq!(
-            verify_model_file(&path, MODEL_SHA256, 4),
+            verify_model_file(&path, MODEL_SHA256, None, 4),
+            Err(ModelProfileError::Corrupted)
+        );
+        std::fs::write(&path, b"model").unwrap();
+        assert_eq!(
+            verify_model_file(&path, MODEL_SHA256, Some(6), 1024),
             Err(ModelProfileError::Corrupted)
         );
         let _ = std::fs::remove_file(path);

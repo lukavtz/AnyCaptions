@@ -23,10 +23,9 @@ use sha2::{Digest, Sha256};
 use crate::update::{CURRENT_VERSION, newer};
 
 /// Verifies every update. The private key never enters the repository.
-const PUBLIC_KEY: &str = "RWTcbjUZlwuKjzVjLhU49QKNIuIxHQ+8lu4VoAvJZgwDho+Mqf48H8Ap";
-const LATEST_BASE_URL: &str =
-    "https://github.com/EduardoViniciusJ/AnyCaptions/releases/latest/download";
-const RELEASE_BASE_URL: &str = "https://github.com/EduardoViniciusJ/AnyCaptions/releases/download";
+const PUBLIC_KEY: &str = "RWTmeZEz4/wzPLQqoJTKc/pRoLj1xXticiQjoksBhDRR6FZO+ZMGmevY";
+const LATEST_BASE_URL: &str = "https://github.com/lukavtz/AnyCaptions/releases/latest/download";
+const RELEASE_BASE_URL: &str = "https://github.com/lukavtz/AnyCaptions/releases/download";
 const MANIFEST_NAME: &str = "update.json";
 const SIGNATURE_NAME: &str = "update.json.minisig";
 const STAGING_DIR: &str = ".update";

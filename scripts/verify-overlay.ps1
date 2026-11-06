@@ -476,6 +476,18 @@ try {
     $scale = $dpi / 96.0
     $probe = New-Object OverlayClickProbe
     $probe.Create($work.Left, $work.Top, $work.Right - $work.Left, $work.Bottom - $work.Top)
+    [void][ProductionOverlayNative]::SetWindowPos(
+        $probe.Handle,
+        [IntPtr]::new(-1),
+        0, 0, 0, 0,
+        [ProductionOverlayNative]::SWP_NOMOVE -bor [ProductionOverlayNative]::SWP_NOSIZE -bor [ProductionOverlayNative]::SWP_NOACTIVATE
+    )
+    [void][ProductionOverlayNative]::SetWindowPos(
+        $hwnd,
+        [IntPtr]::new(-1),
+        0, 0, 0, 0,
+        [ProductionOverlayNative]::SWP_NOMOVE -bor [ProductionOverlayNative]::SWP_NOSIZE -bor [ProductionOverlayNative]::SWP_NOACTIVATE
+    )
     Start-Sleep -Milliseconds 200
     [System.Windows.Forms.Application]::DoEvents()
     $pixel = Save-OverlayScreenshot $hwnd $ScreenshotPath $scale
